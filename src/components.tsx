@@ -26,6 +26,8 @@ export type IconName =
   | "scan"
   | "shield"
   | "spark"
+  | "sound"
+  | "soundOff"
   | "target"
   | "users"
   | "vault"
@@ -74,6 +76,8 @@ export function Icon({
     scan: <><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3" /><path d="M7 12h10" /></>,
     shield: <path d="M12 3 5 6v5c0 4.5 2.8 8 7 10 4.2-2 7-5.5 7-10V6l-7-3Z" />,
     spark: <><path d="m12 2 1.6 7.4L21 12l-7.4 1.6L12 21l-1.6-7.4L3 12l7.4-2.6L12 2Z" /><path d="m19 3 .5 2.5L22 6l-2.5.5L19 9l-.5-2.5L16 6l2.5-.5L19 3Z" /></>,
+    sound: <><path d="M4 10v4h3l4 3V7l-4 3H4Z" /><path d="M15 9.5a4 4 0 0 1 0 5M17.5 7a7.5 7.5 0 0 1 0 10" /></>,
+    soundOff: <><path d="M4 10v4h3l4 3V7l-4 3H4Z" /><path d="m16 10 5 5M21 10l-5 5" /></>,
     target: <><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4" /><circle cx="12" cy="12" r="1" /></>,
     users: <><path d="M16 20v-1.2a4.3 4.3 0 0 0-4.3-4.3H7.3A4.3 4.3 0 0 0 3 18.8V20" /><circle cx="9.5" cy="7.5" r="3.5" /><path d="M16 3.7a3.5 3.5 0 0 1 0 6.8M21 20v-1.2a4.3 4.3 0 0 0-3.2-4.1" /></>,
     vault: <><rect x="3" y="5" width="18" height="15" rx="2" /><circle cx="12" cy="12.5" r="3" /><path d="M12 10.5v2l1.5 1M7 5v15M17 5v15" /></>,
@@ -91,6 +95,8 @@ export function SiteHeader({
   view,
   onConnect,
   onLogoClick,
+  soundMuted,
+  onToggleSound,
 }: {
   connected: boolean;
   address?: string;
@@ -98,6 +104,8 @@ export function SiteHeader({
   view: MatchView;
   onConnect: () => void;
   onLogoClick: () => void;
+  soundMuted: boolean;
+  onToggleSound: () => void;
 }) {
   return (
     <header className="topbar">
@@ -111,6 +119,10 @@ export function SiteHeader({
       </div>
       <div className="topbar-actions">
         <span className="network-chip"><span className="status-dot" /> SEPOLIA NETWORK</span>
+        <button className="sound-button" onClick={onToggleSound} aria-label={soundMuted ? "Turn sound on" : "Mute sound"} aria-pressed={!soundMuted}>
+          <Icon name={soundMuted ? "soundOff" : "sound"} size={15} />
+          <span>{soundMuted ? "SOUND OFF" : "SOUND ON"}</span>
+        </button>
         <button className={`wallet-button ${connected ? "wallet-connected" : ""}`} onClick={onConnect} disabled={connectionBusy}>
           <Icon name="wallet" size={15} />
           {connectionBusy ? "Connecting…" : connected && address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "Connect wallet"}

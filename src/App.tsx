@@ -32,6 +32,7 @@ import {
   WalletConnectModal,
   WaitingView,
 } from "./components";
+import { isSoundMuted, playSound, setSoundMuted } from "./sound";
 
 function makeMatchCode() {
   return `SHD-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
@@ -55,7 +56,18 @@ function App() {
   const [opponentScore, setOpponentScore] = useState(1);
   const [result, setResult] = useState<RoundResult | null>(null);
   const [toastMessage, setToastMessage] = useState("");
+  const [soundMuted, setSoundMutedState] = useState(() => {
+    try {
+      return window.localStorage.getItem("shadow-heist:sound-muted") === "1";
+    } catch {
+      return false;
+    }
+  });
   const timers = useRef<number[]>([]);
+
+  useEffect(() => {
+    setSoundMuted(soundMuted);
+  }, [soundMuted]);
 
   useEffect(() => {
     if (!toastMessage) return;
@@ -79,6 +91,7 @@ function App() {
       setConnectionBusy(true);
       try {
         setToastMessage("Creating the vault on Sepolia…");
+        playSound("vault");
         const created = await createLiveMatch(wallet);
         setLiveMode(true);
         setLiveMatchId(created.matchId);
@@ -101,6 +114,7 @@ function App() {
     setMatchCode(makeMatchCode());
     setOpponentJoined(false);
     setView("waiting");
+    playSound("vault");
     setToastMessage(wallet ? "Contract address missing; opened demo mode." : "Vault created in demo mode. Share the match code with your rival.");
   }
 
@@ -118,6 +132,7 @@ function App() {
       try {
         const matchId = BigInt(numericMatchId);
         setToastMessage(`Joining vault #${numericMatchId} on Sepolia…`);
+        playSound("opponent");
         await joinLiveMatch(wallet, matchId);
         const state = await readLiveMatch(wallet, matchId);
         setLiveMode(true);
@@ -143,6 +158,7 @@ function App() {
     setOpponentJoined(true);
     setJoinOpen(false);
     setView("waiting");
+    playSound("opponent");
     setToastMessage("You slipped in. Your rival is already watching the door.");
   }
 
@@ -164,6 +180,7 @@ function App() {
         ? await connectWalletConnect()
         : await connectSepoliaWallet();
       setWallet(session);
+      playSound("connect");
       setWalletModalOpen(false);
       setToastMessage(`${source === "walletconnect" ? "WalletConnect" : "Browser wallet"} connected on Sepolia.`);
     } catch (error) {
@@ -195,6 +212,7 @@ function App() {
 
   function handleSimulateOpponent() {
     setOpponentJoined(true);
+    playSound("opponent");
     setToastMessage("Rival detected. Both seats are locked in.");
   }
 
@@ -223,6 +241,7 @@ function App() {
 
     if (liveMode && wallet && liveMatchId !== null) {
       try {
+        playSound("seal");
         await submitLiveAction(wallet, liveMatchId, selectedAction, setProcessing);
         setProcessing("waiting");
         const readyState = await waitForLiveMatchState(
@@ -268,8 +287,10 @@ function App() {
         setOpponentScore((score) => score + liveResult.pointsOpponent);
         setResult(liveResult);
         setProcessing("resolved");
+        playSound(liveResult.winner === "you" ? "win" : liveResult.winner === "opponent" ? "lose" : "draw");
       } catch (error) {
         setProcessing("idle");
+        playSound("error");
         setToastMessage(error instanceof Error ? error.message : "Live round failed.");
       }
       return;
@@ -278,6 +299,7 @@ function App() {
     const opponentAction = opponentSequence[(round - 1) % opponentSequence.length];
     const nextResult = calculateResult(selectedAction, opponentAction, round);
     clearRoundTimers();
+    playSound("seal");
     setProcessing("encrypting");
 
     timers.current = [
@@ -290,6 +312,7 @@ function App() {
         setResult(nextResult);
         setYourScore((score) => score + nextResult.pointsYou);
         setOpponentScore((score) => score + nextResult.pointsOpponent);
+        playSound(nextResult.winner === "you" ? "win" : nextResult.winner === "opponent" ? "lose" : "draw");
       }, 3250),
     ];
   }
@@ -325,6 +348,18 @@ function App() {
     setToastMessage("Fresh vault, fresh tells. Waiting for a rival.");
   }
 
+  function handleToggleSound() {
+    const nextMuted = !soundMuted;
+    setSoundMutedState(nextMuted);
+    setSoundMuted(nextMuted);
+    try {
+      window.localStorage.setItem("shadow-heist:sound-muted", nextMuted ? "1" : "0");
+    } catch {
+      // Keep the preference for this session when storage is unavailable.
+    }
+    if (!nextMuted && !isSoundMuted()) playSound("connect");
+  }
+
   return (
     <div className="app-shell">
       <div className="ambient-glow ambient-glow-left" />
@@ -343,6 +378,8 @@ function App() {
           }
         }}
         onLogoClick={handleBackToLobby}
+        soundMuted={soundMuted}
+        onToggleSound={handleToggleSound}
       />
 
       <main className="page-frame">
