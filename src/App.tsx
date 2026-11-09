@@ -85,6 +85,15 @@ function App() {
   }, [toastMessage]);
 
   useEffect(() => {
+    const sharedMatch = new URLSearchParams(window.location.search).get("match");
+    if (!sharedMatch) return;
+    setJoinCode(sharedMatch);
+    setJoinOpen(true);
+    setToastMessage(`Invite loaded for match ${sharedMatch}. Choose your entry point.`);
+    window.history.replaceState({}, "", window.location.pathname);
+  }, []);
+
+  useEffect(() => {
     return () => timers.current.forEach((timer) => window.clearTimeout(timer));
   }, []);
 
@@ -261,6 +270,25 @@ function App() {
     setOpponentJoined(true);
     playSound("opponent");
     setToastMessage("Rival detected. Both seats are locked in.");
+  }
+
+  async function handleCopyInvite() {
+    const inviteUrl = `${window.location.origin}${window.location.pathname}?match=${encodeURIComponent(matchCode)}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: "Join Shadow Heist",
+          text: `Join my confidential vault: ${matchCode}`,
+          url: inviteUrl,
+        });
+      } else {
+        await navigator.clipboard?.writeText(inviteUrl);
+        setToastMessage("Invite link copied. Send it to your rival.");
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setToastMessage("Could not share the invite link. Copy the match code instead.");
+    }
   }
 
   function handleEnterGame() {
@@ -453,6 +481,7 @@ function App() {
             onSimulateOpponent={handleSimulateOpponent}
             onRefresh={() => void refreshLiveMatch()}
             onEnter={handleEnterGame}
+            onCopyInvite={() => void handleCopyInvite()}
           />
         )}
         {view === "game" && (

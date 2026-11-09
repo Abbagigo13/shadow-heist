@@ -296,6 +296,7 @@ export function WaitingView({
   onSimulateOpponent,
   onRefresh,
   onEnter,
+  onCopyInvite,
 }: {
   matchCode: string;
   opponentJoined: boolean;
@@ -304,6 +305,7 @@ export function WaitingView({
   onSimulateOpponent: () => void;
   onRefresh: () => void;
   onEnter: () => void;
+  onCopyInvite: () => void;
 }) {
   return (
     <div className="waiting-layout">
@@ -318,7 +320,7 @@ export function WaitingView({
           <p className="hero-copy">Share the code below. Once both seats are locked, neither player can see the other’s move until the vault resolves.</p>
           <div className="match-code-card">
             <div><span className="match-code-label">YOUR MATCH CODE</span><strong>{matchCode}</strong></div>
-            <button className="copy-code-button" onClick={() => navigator.clipboard?.writeText(matchCode)}><Icon name="copy" size={15} /> Copy code</button>
+            <div className="invite-actions"><button className="copy-code-button" onClick={() => navigator.clipboard?.writeText(matchCode)}><Icon name="copy" size={15} /> Copy code</button><button className="copy-code-button invite-button" onClick={onCopyInvite}><Icon name="link" size={15} /> Share invite</button></div>
           </div>
           <div className="waiting-actions">
             {!opponentJoined ? (
