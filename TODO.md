@@ -13,3 +13,4 @@
 - [x] Support WalletConnect and injected wallets as the provider source for both ethers transactions and Zama FHEVM browser encryption.
 - [ ] Validate a complete two-wallet Sepolia round using the deployed contract address `0xFb430BbC236b2FAcDB11c81d79eE551DFad14AF7` and record any contract/UI edge cases found during that run.
 - [x] Add a reactive synthesized sound layer with persistent mute control and cues for wallet connection, vault creation, opponent arrival, move sealing, errors, and round outcomes.
+- [x] Add a 20-second round countdown with audible ticks, urgent final seconds, and automatic Scout sealing when the player does not choose in time.

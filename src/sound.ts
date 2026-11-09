@@ -3,6 +3,7 @@ type SoundName =
   | "vault"
   | "opponent"
   | "seal"
+  | "tick"
   | "resolve"
   | "win"
   | "lose"
@@ -70,6 +71,9 @@ export function playSound(name: SoundName) {
     case "seal":
       tone(context, 180, now, 0.2, 0.04, "sine", 110);
       tone(context, 720, now + 0.08, 0.12, 0.025, "triangle", 420);
+      break;
+    case "tick":
+      tone(context, 560, now, 0.055, 0.022, "square", 420);
       break;
     case "resolve":
       tone(context, 260, now, 0.11, 0.03, "triangle");

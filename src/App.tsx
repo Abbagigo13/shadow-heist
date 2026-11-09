@@ -38,6 +38,8 @@ function makeMatchCode() {
   return `SHD-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 }
 
+const ROUND_TIME_SECONDS = 20;
+
 function App() {
   const [view, setView] = useState<MatchView>("lobby");
   const [wallet, setWallet] = useState<WalletSession | null>(null);
@@ -50,6 +52,7 @@ function App() {
   const [liveMatchId, setLiveMatchId] = useState<bigint | null>(null);
   const [opponentJoined, setOpponentJoined] = useState(false);
   const [selectedAction, setSelectedAction] = useState<Action | null>(null);
+  const [countdownSeconds, setCountdownSeconds] = useState(ROUND_TIME_SECONDS);
   const [processing, setProcessing] = useState<ProcessingState>("idle");
   const [round, setRound] = useState(1);
   const [yourScore, setYourScore] = useState(2);
@@ -64,6 +67,9 @@ function App() {
     }
   });
   const timers = useRef<number[]>([]);
+  const selectedActionRef = useRef<Action | null>(null);
+
+  selectedActionRef.current = selectedAction;
 
   useEffect(() => {
     setSoundMuted(soundMuted);
@@ -210,6 +216,28 @@ function App() {
     return () => window.clearInterval(interval);
   }, [liveMode, wallet, liveMatchId, view]);
 
+  useEffect(() => {
+    if (view !== "game" || processing !== "idle" || result) return;
+
+    setCountdownSeconds(ROUND_TIME_SECONDS);
+    const interval = window.setInterval(() => {
+      setCountdownSeconds((seconds) => {
+        const next = Math.max(seconds - 1, 0);
+        if (next > 0) playSound("tick");
+        return next;
+      });
+    }, 1000);
+    const expiry = window.setTimeout(() => {
+      playSound("error");
+      void handleSubmitAction(selectedActionRef.current ?? "scout");
+    }, ROUND_TIME_SECONDS * 1000);
+
+    return () => {
+      window.clearInterval(interval);
+      window.clearTimeout(expiry);
+    };
+  }, [view, round, processing, result]);
+
   function handleSimulateOpponent() {
     setOpponentJoined(true);
     playSound("opponent");
@@ -218,6 +246,7 @@ function App() {
 
   function handleEnterGame() {
     setView("game");
+    setCountdownSeconds(ROUND_TIME_SECONDS);
     setSelectedAction(null);
     setProcessing("idle");
     setResult(null);
@@ -236,13 +265,14 @@ function App() {
     setResult(null);
   }
 
-  async function handleSubmitAction() {
-    if (!selectedAction || processing !== "idle") return;
+  async function handleSubmitAction(actionOverride?: Action) {
+    const actionToSubmit = actionOverride ?? selectedAction;
+    if (!actionToSubmit || processing !== "idle") return;
 
     if (liveMode && wallet && liveMatchId !== null) {
       try {
         playSound("seal");
-        await submitLiveAction(wallet, liveMatchId, selectedAction, setProcessing);
+        await submitLiveAction(wallet, liveMatchId, actionToSubmit, setProcessing);
         setProcessing("waiting");
         const readyState = await waitForLiveMatchState(
           wallet,
@@ -297,7 +327,7 @@ function App() {
     }
 
     const opponentAction = opponentSequence[(round - 1) % opponentSequence.length];
-    const nextResult = calculateResult(selectedAction, opponentAction, round);
+    const nextResult = calculateResult(actionToSubmit, opponentAction, round);
     clearRoundTimers();
     playSound("seal");
     setProcessing("encrypting");
@@ -325,6 +355,7 @@ function App() {
     }
     clearRoundTimers();
     setRound((currentRound) => currentRound + 1);
+    setCountdownSeconds(ROUND_TIME_SECONDS);
     setSelectedAction(null);
     setProcessing("idle");
     setResult(null);
@@ -411,6 +442,7 @@ function App() {
             matchCode={matchCode}
             liveMode={liveMode}
             round={round}
+            countdownSeconds={countdownSeconds}
             yourScore={yourScore}
             opponentScore={opponentScore}
             selectedAction={selectedAction}
