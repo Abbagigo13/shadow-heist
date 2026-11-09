@@ -1,0 +1,1 @@
+{"routes":[{"path":"/","title":"Shadow Heist"},{"path":"/match/:matchId","title":"Shadow Heist Match"}]}
