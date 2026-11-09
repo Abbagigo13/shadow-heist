@@ -17,3 +17,4 @@
 - [x] Add a staged result reveal that presents encrypted handles, your move, the rival move, the random event, and the final score outcome in sequence.
 - [x] Add four demo heist events—Silent Alarm, Dead Drop Bonus, Blackout Protocol, and Inside Contact—with random selection and event-specific winner bonuses; preserve the deployed Sepolia contract's existing event codes 0 and 1 until the next contract redeploy.
 - [x] Add shareable match invites with a browser/mobile Share action, clipboard fallback, and automatic `/?match=...` join-drawer prefill for demo codes and live numeric match IDs.
+- [x] Add friendly wallet and transaction error recovery for rejected signatures, wrong network, WalletConnect configuration, gas balance, invalid/full vaults, timeouts, reverted transactions, and live-round retry actions.

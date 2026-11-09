@@ -35,6 +35,7 @@ import {
   WaitingView,
 } from "./components";
 import { isSoundMuted, playSound, setSoundMuted } from "./sound";
+import { friendlyError, type RecoveryAction } from "./errors";
 
 function makeMatchCode() {
   return `SHD-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
@@ -62,6 +63,7 @@ function App() {
   const [opponentScore, setOpponentScore] = useState(1);
   const [result, setResult] = useState<RoundResult | null>(null);
   const [toastMessage, setToastMessage] = useState("");
+  const [recoveryAction, setRecoveryAction] = useState<RecoveryAction | null>(null);
   const [soundMuted, setSoundMutedState] = useState(() => {
     try {
       return window.localStorage.getItem("shadow-heist:sound-muted") === "1";
@@ -102,8 +104,15 @@ function App() {
     timers.current = [];
   }
 
+  function notifyError(error: unknown, fallback: string, recovery?: RecoveryAction) {
+    setRecoveryAction(recovery ?? null);
+    setToastMessage(friendlyError(error, fallback));
+    playSound("error");
+  }
+
   async function handleCreateMatch() {
     setJoinOpen(false);
+    setRecoveryAction(null);
 
     if (wallet && SHADOW_HEIST_ADDRESS) {
       setConnectionBusy(true);
@@ -120,7 +129,7 @@ function App() {
         setView("waiting");
         setToastMessage(`Vault #${created.matchId.toString()} created. Share the match ID.`);
       } catch (error) {
-        setToastMessage(error instanceof Error ? error.message : "Live vault creation failed.");
+        notifyError(error, "Live vault creation failed.", { label: "Retry", run: () => void handleCreateMatch() });
       } finally {
         setConnectionBusy(false);
       }
@@ -138,6 +147,7 @@ function App() {
 
   async function handleJoinMatch() {
     const normalized = joinCode.trim().toUpperCase();
+    setRecoveryAction(null);
 
     if (wallet && SHADOW_HEIST_ADDRESS) {
       const numericMatchId = normalized.replace(/^#/, "");
@@ -163,7 +173,7 @@ function App() {
         setView("waiting");
         setToastMessage(`Joined vault #${numericMatchId}. Waiting for the host to play.`);
       } catch (error) {
-        setToastMessage(error instanceof Error ? error.message : "Live vault join failed.");
+        notifyError(error, "Live vault join failed.", { label: "Retry", run: () => void handleJoinMatch() });
       } finally {
         setConnectionBusy(false);
       }
@@ -181,6 +191,7 @@ function App() {
   }
 
   async function handleWalletConnect(source: WalletSource) {
+    setRecoveryAction(null);
     if (wallet) {
       try {
         await disconnectWallet(wallet);
@@ -202,7 +213,7 @@ function App() {
       setWalletModalOpen(false);
       setToastMessage(`${source === "walletconnect" ? "WalletConnect" : "Browser wallet"} connected on Sepolia.`);
     } catch (error) {
-      setToastMessage(error instanceof Error ? error.message : "Wallet connection failed.");
+      notifyError(error, "Wallet connection failed.", { label: "Retry", run: () => void handleWalletConnect(source) });
     } finally {
       setConnectionBusy(false);
     }
@@ -217,7 +228,7 @@ function App() {
       setYourScore(state.scoreOne);
       setOpponentScore(state.scoreTwo);
     } catch (error) {
-      setToastMessage(error instanceof Error ? error.message : "Could not read the live vault.");
+      notifyError(error, "Could not read the live vault.", { label: "Retry", run: () => void refreshLiveMatch() });
     }
   }
 
@@ -315,6 +326,7 @@ function App() {
   async function handleSubmitAction(actionOverride?: Action) {
     const actionToSubmit = actionOverride ?? selectedAction;
     if (!actionToSubmit || processing !== "idle") return;
+    setRecoveryAction(null);
 
     if (liveMode && wallet && liveMatchId !== null) {
       try {
@@ -365,8 +377,7 @@ function App() {
         playSound(liveResult.winner === "you" ? "win" : liveResult.winner === "opponent" ? "lose" : "draw");
       } catch (error) {
         setProcessing("idle");
-        playSound("error");
-        setToastMessage(error instanceof Error ? error.message : "Live round failed.");
+        notifyError(error, "Live round failed.", { label: "Retry move", run: () => void handleSubmitAction(actionToSubmit) });
       }
       return;
     }
@@ -513,7 +524,7 @@ function App() {
         <span className="footer-lock"><span className="status-dot" /> {liveMode ? "FHE READY · LIVE" : "FHE READY · SIMULATED"}</span>
       </footer>
 
-      {toastMessage && <Toast message={toastMessage} onDismiss={() => setToastMessage("")} />}
+      {toastMessage && <Toast message={toastMessage} error={Boolean(recoveryAction)} actionLabel={recoveryAction?.label} onAction={() => { const action = recoveryAction; setRecoveryAction(null); action?.run(); }} onDismiss={() => { setToastMessage(""); setRecoveryAction(null); }} />}
       {walletModalOpen && !wallet && (
         <WalletConnectModal
           onClose={() => setWalletModalOpen(false)}

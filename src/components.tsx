@@ -32,6 +32,7 @@ export type IconName =
   | "users"
   | "vault"
   | "wallet"
+  | "warning"
   | "x";
 
 export function Icon({
@@ -82,6 +83,7 @@ export function Icon({
     users: <><path d="M16 20v-1.2a4.3 4.3 0 0 0-4.3-4.3H7.3A4.3 4.3 0 0 0 3 18.8V20" /><circle cx="9.5" cy="7.5" r="3.5" /><path d="M16 3.7a3.5 3.5 0 0 1 0 6.8M21 20v-1.2a4.3 4.3 0 0 0-3.2-4.1" /></>,
     vault: <><rect x="3" y="5" width="18" height="15" rx="2" /><circle cx="12" cy="12.5" r="3" /><path d="M12 10.5v2l1.5 1M7 5v15M17 5v15" /></>,
     wallet: <><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4H19a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H6.5A2.5 2.5 0 0 1 4 17.5v-11Z" /><path d="M4 7h14a2 2 0 0 1 2 2v2h-5a2 2 0 0 0 0 4h5" /><path d="M16.5 13h.01" /></>,
+    warning: <><path d="m12 3 9 17H3L12 3Z" /><path d="M12 9v5M12 17h.01" /></>,
     x: <><path d="m6 6 12 12M18 6 6 18" /></>,
   };
 
@@ -451,6 +453,6 @@ export function GameView({
   );
 }
 
-export function Toast({ message, onDismiss }: { message: string; onDismiss: () => void }) {
-  return <div className="toast"><span className="toast-icon"><Icon name="check" size={14} /></span><span>{message}</span><button aria-label="Dismiss notification" onClick={onDismiss}><Icon name="x" size={14} /></button></div>;
+export function Toast({ message, error = false, actionLabel, onAction, onDismiss }: { message: string; error?: boolean; actionLabel?: string; onAction?: () => void; onDismiss: () => void }) {
+  return <div className={`toast ${error ? "toast-error" : ""}`} role={error ? "alert" : "status"}><span className="toast-icon"><Icon name={error ? "warning" : "check"} size={14} /></span><span className="toast-message">{message}</span>{actionLabel && onAction && <button className="toast-action" onClick={onAction}>{actionLabel}</button>}<button aria-label="Dismiss notification" onClick={onDismiss}><Icon name="x" size={14} /></button></div>;
 }
