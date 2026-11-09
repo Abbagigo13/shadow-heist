@@ -10,6 +10,10 @@ const mnemonic = vars.get(
   "test test test test test test test test test test test junk",
 );
 const infuraApiKey = vars.get("INFURA_API_KEY", "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz");
+const privateKey = vars.get("PRIVATE_KEY", "");
+const sepoliaAccounts = privateKey
+  ? [privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`]
+  : { mnemonic, count: 10 };
 
 module.exports = {
   defaultNetwork: "hardhat",
@@ -27,7 +31,7 @@ module.exports = {
       url: "http://127.0.0.1:8545",
     },
     sepolia: {
-      accounts: { mnemonic, count: 10 },
+      accounts: sepoliaAccounts,
       chainId: 11155111,
       url: `https://sepolia.infura.io/v3/${infuraApiKey}`,
     },

@@ -38,6 +38,16 @@ pnpm hardhat vars set INFURA_API_KEY
 pnpm contracts:deploy:sepolia
 ```
 
+For a test-only deployer account, the Hardhat config also accepts a private key instead of a mnemonic. Use the local prompt and never paste the key into chat, source files, `.env`, or GitHub:
+
+```bash
+pnpm hardhat vars set PRIVATE_KEY
+pnpm hardhat vars set INFURA_API_KEY
+pnpm contracts:deploy:sepolia
+```
+
+When `PRIVATE_KEY` is present, it takes precedence for the Sepolia deployer. The Hardhat and local test networks continue to use the configured mnemonic.
+
 After deployment, copy the `ShadowHeist` address into a local Vite environment file:
 
 ```bash
