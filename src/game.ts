@@ -22,6 +22,49 @@ export type RoundResult = {
   eventDescription: string;
 };
 
+export type HeistEvent = {
+  code: number;
+  title: string;
+  description: string;
+  winnerPoints: number;
+  scoutBonus: number;
+};
+
+export const heistEvents: HeistEvent[] = [
+  {
+    code: 0,
+    title: "Silent alarm",
+    description: "The building went dark. Only the cleanest move gets paid.",
+    winnerPoints: 1,
+    scoutBonus: 0,
+  },
+  {
+    code: 1,
+    title: "Dead drop bonus",
+    description: "A hidden courier left an extra cache in the west wing.",
+    winnerPoints: 2,
+    scoutBonus: 0,
+  },
+  {
+    code: 2,
+    title: "Blackout protocol",
+    description: "The cameras blinked out. The winner gets paid before the grid returns.",
+    winnerPoints: 2,
+    scoutBonus: 0,
+  },
+  {
+    code: 3,
+    title: "Inside contact",
+    description: "A trusted voice opened a side door. Scout gets an extra point this round.",
+    winnerPoints: 1,
+    scoutBonus: 1,
+  },
+];
+
+export function getHeistEvent(code: number): HeistEvent {
+  return heistEvents.find((event) => event.code === code) ?? heistEvents[0];
+}
+
 export const actionMeta: Record<
   Action,
   { label: string; eyebrow: string; description: string; detail: string; glyph: string }
@@ -55,6 +98,7 @@ export function calculateResult(
   playerAction: Action,
   opponentAction: Action,
   round: number,
+  eventCode = (round - 1) % heistEvents.length,
 ): RoundResult {
   const playerWins =
     (playerAction === "steal" && opponentAction === "scout") ||
@@ -62,20 +106,18 @@ export function calculateResult(
     (playerAction === "scout" && opponentAction === "guard");
   const isDraw = playerAction === opponentAction;
   const winner: Outcome = isDraw ? "draw" : playerWins ? "you" : "opponent";
-  const eventTitle = round % 2 === 0 ? "Dead drop bonus" : "Silent alarm";
-  const eventDescription =
-    round % 2 === 0
-      ? "A hidden courier left an extra cache in the west wing."
-      : "The building went dark. Only the cleanest move gets paid.";
+  const event = getHeistEvent(eventCode);
+  const winningAction = winner === "you" ? playerAction : opponentAction;
+  const winnerPoints = event.winnerPoints + (winningAction === "scout" ? event.scoutBonus : 0);
 
   return {
     playerAction,
     opponentAction,
     winner,
-    pointsYou: winner === "you" ? (round % 2 === 0 ? 2 : 1) : 0,
-    pointsOpponent: winner === "opponent" ? 1 : 0,
-    eventTitle,
-    eventDescription,
+    pointsYou: winner === "you" ? winnerPoints : 0,
+    pointsOpponent: winner === "opponent" ? winnerPoints : 0,
+    eventTitle: event.title,
+    eventDescription: event.description,
   };
 }
 

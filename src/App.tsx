@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import {
   calculateResult,
+  getHeistEvent,
+  heistEvents,
   opponentSequence,
   type Action,
   type MatchView,
@@ -324,10 +326,8 @@ function App() {
           winner,
           pointsYou,
           pointsOpponent,
-          eventTitle: decrypted.eventCode === 1 ? "Dead drop bonus" : "Silent alarm",
-          eventDescription: decrypted.eventCode === 1
-            ? "A hidden courier left an extra cache in the west wing."
-            : "The building went dark. Only the cleanest move gets paid.",
+          eventTitle: getHeistEvent(decrypted.eventCode).title,
+          eventDescription: getHeistEvent(decrypted.eventCode).description,
         };
         setRound(resolvedState.round);
         setYourScore((score) => score + liveResult.pointsYou);
@@ -344,7 +344,8 @@ function App() {
     }
 
     const opponentAction = opponentSequence[(round - 1) % opponentSequence.length];
-    const nextResult = calculateResult(actionToSubmit, opponentAction, round);
+    const demoEventCode = Math.floor(Math.random() * heistEvents.length);
+    const nextResult = calculateResult(actionToSubmit, opponentAction, round, demoEventCode);
     clearRoundTimers();
     playSound("seal");
     setProcessing("encrypting");
