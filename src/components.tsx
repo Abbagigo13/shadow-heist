@@ -384,14 +384,17 @@ function ProcessingPanel({ state, liveMode }: { state: ProcessingState; liveMode
   );
 }
 
-function RoundResolution({ result, onNextRound, onRematch }: { result: RoundResult; onNextRound: () => void; onRematch: () => void }) {
+function RoundResolution({ result, revealStage, onNextRound, onRematch }: { result: RoundResult; revealStage: number; onNextRound: () => void; onRematch: () => void }) {
   const outcomeCopy = result.winner === "you" ? "You took the vault." : result.winner === "opponent" ? "The rival got there first." : "The vault stayed quiet.";
+  const revealLabel = revealStage === 0 ? "Reading encrypted handles" : revealStage === 1 ? "Your move is clear" : revealStage === 2 ? "Rival move is clear" : revealStage === 3 ? "Random event decoded" : "Round resolved";
+  const actionCopy = (action: Action, visible: boolean) => visible ? <><ActionGlyph action={action} /> {actionMeta[action].label}</> : <><Icon name="lock" size={13} /> SEALED</>;
   return (
-    <div className={`resolution-card outcome-${result.winner}`}>
-      <div className="resolution-top"><span className="resolution-kicker"><Icon name="spark" size={13} /> ROUND RESOLVED</span><span className="resolution-event"><Icon name="bolt" size={12} /> {result.eventTitle}</span></div>
-      <div className="resolution-head"><div><h2>{outcomeCopy}</h2><p>{result.eventDescription}</p></div><div className="resolution-points"><strong>{result.winner === "you" ? `+${result.pointsYou}` : result.winner === "opponent" ? `-${result.pointsOpponent}` : "±0"}</strong><span>points</span></div></div>
-      <div className="revealed-actions"><div><span>YOUR MOVE</span><strong><ActionGlyph action={result.playerAction} /> {actionMeta[result.playerAction].label}</strong></div><span className="versus">VS</span><div className="revealed-rival"><span>RIVAL MOVE</span><strong><ActionGlyph action={result.opponentAction} /> {actionMeta[result.opponentAction].label}</strong></div></div>
-      <div className="resolution-actions"><button className="primary-button compact-button" onClick={onNextRound}><span className="button-icon"><Icon name="refresh" size={16} /></span><span><strong>Run it back</strong><small>Open the next round</small></span><Icon name="arrow" size={16} className="button-arrow" /></button><button className="text-button" onClick={onRematch}>End match / rematch</button></div>
+    <div className={`resolution-card outcome-${result.winner} reveal-stage-${revealStage}`}>
+      <div className="resolution-top"><span className="resolution-kicker"><Icon name={revealStage === 4 ? "spark" : "lock"} size={13} /> {revealLabel}</span><span className={`resolution-event ${revealStage >= 3 ? "is-visible" : ""}`}><Icon name="bolt" size={12} /> {revealStage >= 3 ? result.eventTitle : "RANDOM EVENT / HIDDEN"}</span></div>
+      <div className={`resolution-head ${revealStage >= 4 ? "is-visible" : "is-hidden"}`}><div><h2>{outcomeCopy}</h2><p>{result.eventDescription}</p></div><div className="resolution-points"><strong>{result.winner === "you" ? `+${result.pointsYou}` : result.winner === "opponent" ? `-${result.pointsOpponent}` : "±0"}</strong><span>points</span></div></div>
+      <div className="revealed-actions"><div className={revealStage >= 1 ? "is-revealed" : "is-sealed"}><span>YOUR MOVE</span><strong>{actionCopy(result.playerAction, revealStage >= 1)}</strong></div><span className="versus">VS</span><div className={`revealed-rival ${revealStage >= 2 ? "is-revealed" : "is-sealed"}`}><span>RIVAL MOVE</span><strong>{actionCopy(result.opponentAction, revealStage >= 2)}</strong></div></div>
+      {revealStage >= 3 && <div className="event-reveal"><Icon name="spark" size={14} /><span><strong>{result.eventTitle}</strong><small>{result.eventDescription}</small></span></div>}
+      {revealStage >= 4 && <div className="resolution-actions"><button className="primary-button compact-button" onClick={onNextRound}><span className="button-icon"><Icon name="refresh" size={16} /></span><span><strong>Run it back</strong><small>Open the next round</small></span><Icon name="arrow" size={16} className="button-arrow" /></button><button className="text-button" onClick={onRematch}>End match / rematch</button></div>}
     </div>
   );
 }
@@ -405,6 +408,7 @@ export function GameView({
   liveMode,
   round,
   countdownSeconds,
+  revealStage,
   yourScore,
   opponentScore,
   selectedAction,
@@ -420,6 +424,7 @@ export function GameView({
   liveMode: boolean;
   round: number;
   countdownSeconds: number;
+  revealStage: number;
   yourScore: number;
   opponentScore: number;
   selectedAction: Action | null;
@@ -437,7 +442,7 @@ export function GameView({
       <div className="subpage-heading"><button className="back-button" onClick={onBack}><Icon name="back" size={16} /> Exit match</button><div className="subpage-meta"><span className="status-dot status-dot-bright" /> {liveMode ? "SEPOLIA ROUND / ENCRYPTED STATE" : "DEMO ROUND / ENCRYPTED STATE"}</div></div>
       <div className="game-topline"><div><div className="hero-stamp"><Icon name="radio" size={13} /> MATCH IN PROGRESS / VAULT {matchCode}</div><h1>Make your<br /><em>move.</em></h1></div><Scoreboard round={round} yourScore={yourScore} opponentScore={opponentScore} /></div>
       <div className="game-content">
-        <section className="move-section"><div className="move-section-heading"><div><SectionKicker icon="target">Your angle</SectionKicker><h2>Pick one. Seal it.</h2></div><div className="round-tools"><span className={`countdown-badge ${countdownSeconds <= 5 ? "is-urgent" : ""}`} aria-live="polite"><Icon name="clock" size={14} /> {countdownSeconds}s</span><span className="move-lock-note"><Icon name="lock" size={14} /> Hidden from rival</span></div></div><div className="action-grid"><ActionCard action="steal" selected={selectedAction === "steal"} disabled={locked} onSelect={() => onSelectAction("steal")} /><ActionCard action="guard" selected={selectedAction === "guard"} disabled={locked} onSelect={() => onSelectAction("guard")} /><ActionCard action="scout" selected={selectedAction === "scout"} disabled={locked} onSelect={() => onSelectAction("scout")} /></div><div className="submit-row"><div className="submit-hint">{selectedAction ? <><span className="status-dot status-dot-bright" /> {actionMeta[selectedAction].label} selected · ready to seal</> : countdownSeconds <= 5 ? <><span className="status-dot status-dot-bright" /> Vault closing · choose now</> : <><span className="status-dot" /> Choose an action to continue</>}</div><button className="seal-button" onClick={onSubmit} disabled={!selectedAction || locked}>{locked ? <><Icon name="lock" size={16} /> Sealed</> : <><Icon name="key" size={16} /> Seal my move</>}</button></div>{result && <RoundResolution result={result} onNextRound={onNextRound} onRematch={onRematch} />}</section>
+        <section className="move-section"><div className="move-section-heading"><div><SectionKicker icon="target">Your angle</SectionKicker><h2>Pick one. Seal it.</h2></div><div className="round-tools"><span className={`countdown-badge ${countdownSeconds <= 5 ? "is-urgent" : ""}`} aria-live="polite"><Icon name="clock" size={14} /> {countdownSeconds}s</span><span className="move-lock-note"><Icon name="lock" size={14} /> Hidden from rival</span></div></div><div className="action-grid"><ActionCard action="steal" selected={selectedAction === "steal"} disabled={locked} onSelect={() => onSelectAction("steal")} /><ActionCard action="guard" selected={selectedAction === "guard"} disabled={locked} onSelect={() => onSelectAction("guard")} /><ActionCard action="scout" selected={selectedAction === "scout"} disabled={locked} onSelect={() => onSelectAction("scout")} /></div><div className="submit-row"><div className="submit-hint">{selectedAction ? <><span className="status-dot status-dot-bright" /> {actionMeta[selectedAction].label} selected · ready to seal</> : countdownSeconds <= 5 ? <><span className="status-dot status-dot-bright" /> Vault closing · choose now</> : <><span className="status-dot" /> Choose an action to continue</>}</div><button className="seal-button" onClick={onSubmit} disabled={!selectedAction || locked}>{locked ? <><Icon name="lock" size={16} /> Sealed</> : <><Icon name="key" size={16} /> Seal my move</>}</button></div>{result && <RoundResolution result={result} revealStage={revealStage} onNextRound={onNextRound} onRematch={onRematch} />}</section>
         <aside className="game-aside"><ProcessingPanel state={processing} liveMode={liveMode} /><div className="intel-card"><div className="intel-top"><SectionKicker icon="scan">Live intel</SectionKicker><span className="encrypted-label"><Icon name="lock" size={12} /> ENCRYPTED</span></div><div className="intel-visual"><div className="intel-lines"><span /><span /><span /><span /></div><div className="intel-core"><Icon name="vault" size={27} /></div><div className="intel-rings" /></div><h3>The rival’s move is sealed.</h3><p>Public observers can see a transaction. They cannot see the choice inside it.</p><div className="intel-footer"><span><span className="status-dot" /> Observer view</span><span>NO TELLS</span></div></div><div className="rules-mini"><span className="rules-mini-title">COUNTER CYCLE</span><div><span className="rule-pill pill-steal">STEAL</span><Icon name="chevron" size={13} /><span className="rule-pill pill-scout">SCOUT</span><Icon name="chevron" size={13} /><span className="rule-pill pill-guard">GUARD</span><Icon name="chevron" size={13} /></div><small>Every move has a counter. Never assume the obvious play.</small></div></aside>
       </div>
     </div>

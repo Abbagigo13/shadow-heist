@@ -53,6 +53,7 @@ function App() {
   const [opponentJoined, setOpponentJoined] = useState(false);
   const [selectedAction, setSelectedAction] = useState<Action | null>(null);
   const [countdownSeconds, setCountdownSeconds] = useState(ROUND_TIME_SECONDS);
+  const [revealStage, setRevealStage] = useState(0);
   const [processing, setProcessing] = useState<ProcessingState>("idle");
   const [round, setRound] = useState(1);
   const [yourScore, setYourScore] = useState(2);
@@ -237,6 +238,22 @@ function App() {
       window.clearTimeout(expiry);
     };
   }, [view, round, processing, result]);
+
+  useEffect(() => {
+    if (!result) {
+      setRevealStage(0);
+      return;
+    }
+
+    setRevealStage(0);
+    const revealTimers = [
+      window.setTimeout(() => setRevealStage(1), 420),
+      window.setTimeout(() => setRevealStage(2), 980),
+      window.setTimeout(() => setRevealStage(3), 1_540),
+      window.setTimeout(() => setRevealStage(4), 2_180),
+    ];
+    return () => revealTimers.forEach((timer) => window.clearTimeout(timer));
+  }, [result]);
 
   function handleSimulateOpponent() {
     setOpponentJoined(true);
@@ -443,6 +460,7 @@ function App() {
             liveMode={liveMode}
             round={round}
             countdownSeconds={countdownSeconds}
+            revealStage={revealStage}
             yourScore={yourScore}
             opponentScore={opponentScore}
             selectedAction={selectedAction}
