@@ -1,7 +1,8 @@
-import { BrowserProvider, Contract, type JsonRpcSigner } from "ethers";
+import { BrowserProvider, Contract, type Eip1193Provider, type JsonRpcSigner } from "ethers";
 
 export const SEPOLIA_CHAIN_ID = 11155111;
 export const SHADOW_HEIST_ADDRESS = (import.meta.env.VITE_SHADOW_HEIST_ADDRESS ?? "") as string;
+export const WALLETCONNECT_PROJECT_ID = (import.meta.env.VITE_WALLETCONNECT_PROJECT_ID ?? "") as string;
 
 export const shadowHeistAbi = [
   "function createMatch() returns (uint256 matchId)",
@@ -16,23 +17,44 @@ export const shadowHeistAbi = [
   "event RoundReady(uint256 indexed matchId)",
 ] as const;
 
+export type WalletSource = "injected" | "walletconnect";
+
 export type WalletSession = {
   provider: BrowserProvider;
   signer: JsonRpcSigner;
   address: string;
   chainId: number;
+  source: WalletSource;
+  walletConnectProvider?: WalletConnectProvider;
 };
 
-function getEthereum() {
+type WalletConnectProvider = Eip1193Provider & {
+  connect: () => Promise<void>;
+  disconnect: () => Promise<void>;
+  session?: unknown;
+};
+
+let walletConnectProvider: WalletConnectProvider | null = null;
+
+function getEthereum(): Eip1193Provider {
   if (!window.ethereum) {
-    throw new Error("No injected wallet found. Install MetaMask or another EIP-1193 wallet.");
+    throw new Error("No injected wallet found. Choose WalletConnect to use a mobile wallet.");
   }
   return window.ethereum;
 }
 
-export async function connectSepoliaWallet(): Promise<WalletSession> {
-  const provider = new BrowserProvider(getEthereum());
-  await provider.send("eth_requestAccounts", []);
+function ensureProjectId() {
+  if (!WALLETCONNECT_PROJECT_ID) {
+    throw new Error("WalletConnect needs VITE_WALLETCONNECT_PROJECT_ID in the project environment.");
+  }
+}
+
+async function createWalletSession(
+  eip1193Provider: Eip1193Provider,
+  source: WalletSource,
+  connector?: WalletConnectProvider,
+): Promise<WalletSession> {
+  const provider = new BrowserProvider(eip1193Provider);
   const network = await provider.getNetwork();
   const chainId = Number(network.chainId);
 
@@ -46,7 +68,45 @@ export async function connectSepoliaWallet(): Promise<WalletSession> {
     signer,
     address: await signer.getAddress(),
     chainId,
+    source,
+    walletConnectProvider: connector,
   };
+}
+
+export async function connectSepoliaWallet(): Promise<WalletSession> {
+  const ethereum = getEthereum();
+  await ethereum.request({ method: "eth_requestAccounts" });
+  return createWalletSession(ethereum, "injected");
+}
+
+export async function connectWalletConnect(): Promise<WalletSession> {
+  ensureProjectId();
+
+  const { EthereumProvider } = await import("@walletconnect/ethereum-provider");
+
+  walletConnectProvider ??= await EthereumProvider.init({
+    projectId: WALLETCONNECT_PROJECT_ID,
+    optionalChains: [SEPOLIA_CHAIN_ID],
+    showQrModal: true,
+    metadata: {
+      name: "Shadow Heist",
+      description: "Confidential two-player strategy on Zama FHEVM",
+      url: window.location.origin,
+      icons: [`${window.location.origin}/shadow-heist-logo.svg`],
+    },
+  });
+
+  if (!walletConnectProvider.session) {
+    await walletConnectProvider.connect();
+  }
+
+  return createWalletSession(walletConnectProvider, "walletconnect", walletConnectProvider);
+}
+
+export async function disconnectWallet(session: WalletSession) {
+  if (session.source === "walletconnect" && session.walletConnectProvider?.session) {
+    await session.walletConnectProvider.disconnect();
+  }
 }
 
 export function getShadowHeistContract(signerOrProvider: JsonRpcSigner | BrowserProvider) {

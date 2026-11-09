@@ -7,12 +7,19 @@ import {
   type ProcessingState,
   type RoundResult,
 } from "./game";
-import { connectSepoliaWallet, type WalletSession } from "./chain";
+import {
+  connectSepoliaWallet,
+  connectWalletConnect,
+  disconnectWallet,
+  type WalletSession,
+  type WalletSource,
+} from "./chain";
 import {
   GameView,
   LobbyView,
   SiteHeader,
   Toast,
+  WalletConnectModal,
   WaitingView,
 } from "./components";
 
@@ -24,6 +31,7 @@ function App() {
   const [view, setView] = useState<MatchView>("lobby");
   const [wallet, setWallet] = useState<WalletSession | null>(null);
   const [connectionBusy, setConnectionBusy] = useState(false);
+  const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
   const [joinCode, setJoinCode] = useState("");
   const [matchCode, setMatchCode] = useState("SHD-4K7J");
@@ -69,18 +77,26 @@ function App() {
     setToastMessage("You slipped in. Your rival is already watching the door.");
   }
 
-  async function handleWalletConnect() {
+  async function handleWalletConnect(source: WalletSource) {
     if (wallet) {
-      setWallet(null);
-      setToastMessage("Wallet disconnected. Demo mode is still available.");
+      try {
+        await disconnectWallet(wallet);
+        setWallet(null);
+        setToastMessage("Wallet disconnected. Demo mode is still available.");
+      } catch (error) {
+        setToastMessage(error instanceof Error ? error.message : "Wallet disconnect failed.");
+      }
       return;
     }
 
     setConnectionBusy(true);
     try {
-      const session = await connectSepoliaWallet();
+      const session = source === "walletconnect"
+        ? await connectWalletConnect()
+        : await connectSepoliaWallet();
       setWallet(session);
-      setToastMessage("Wallet connected on Sepolia. Live contract wiring is ready.");
+      setWalletModalOpen(false);
+      setToastMessage(`${source === "walletconnect" ? "WalletConnect" : "Browser wallet"} connected on Sepolia.`);
     } catch (error) {
       setToastMessage(error instanceof Error ? error.message : "Wallet connection failed.");
     } finally {
@@ -165,7 +181,13 @@ function App() {
         address={wallet?.address}
         connectionBusy={connectionBusy}
         view={view}
-        onConnect={handleWalletConnect}
+        onConnect={() => {
+          if (wallet) {
+            void handleWalletConnect("injected");
+          } else {
+            setWalletModalOpen(true);
+          }
+        }}
         onLogoClick={handleBackToLobby}
       />
 
@@ -216,6 +238,12 @@ function App() {
       </footer>
 
       {toastMessage && <Toast message={toastMessage} onDismiss={() => setToastMessage("")} />}
+      {walletModalOpen && !wallet && (
+        <WalletConnectModal
+          onClose={() => setWalletModalOpen(false)}
+          onSelect={(source) => void handleWalletConnect(source)}
+        />
+      )}
     </div>
   );
 }

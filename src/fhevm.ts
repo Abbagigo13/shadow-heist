@@ -2,6 +2,7 @@ import { ZamaSDK } from "@zama-fhe/sdk";
 import { createConfig } from "@zama-fhe/sdk/ethers";
 import { sepolia } from "@zama-fhe/sdk/chains";
 import { web } from "@zama-fhe/sdk/web";
+import type { EIP1193Provider } from "viem";
 import type { Action } from "./game";
 
 let sdkPromise: Promise<ZamaSDK> | undefined;
@@ -18,11 +19,13 @@ export async function getZamaSdk(): Promise<ZamaSDK> {
     throw new Error("A wallet is required to initialize FHEVM for Sepolia.");
   }
 
+  const zamaEthereum = ethereum as unknown as EIP1193Provider;
+
   sdkPromise ??= Promise.resolve(
     new ZamaSDK(
       createConfig({
         chains: [sepolia],
-        ethereum,
+        ethereum: zamaEthereum,
         relayers: { [sepolia.id]: web() },
       }),
     ),

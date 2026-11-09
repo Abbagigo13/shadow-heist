@@ -16,12 +16,14 @@
   "dependencies": {
     "@fhevm/solidity": "^0.11.1",
     "@vitejs/plugin-react": "latest",
+    "@walletconnect/ethereum-provider": "^2.26.0",
     "@zama-fhe/sdk": "^3.7.1",
     "encrypted-types": "^0.0.4",
     "ethers": "^6.16.0",
     "react": "latest",
     "react-dom": "latest",
     "typescript": "^5.9.3",
+    "viem": "^2.57.16",
     "vite": "latest"
   },
   "devDependencies": {

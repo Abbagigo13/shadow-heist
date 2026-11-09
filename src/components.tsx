@@ -110,13 +110,55 @@ export function SiteHeader({
         <span>{view === "game" ? "LIVE ROUND" : "CONFIDENTIAL ARCADE"}</span>
       </div>
       <div className="topbar-actions">
-        <span className="network-chip"><span className="status-dot" /> SEPOLIA MOCKNET</span>
+        <span className="network-chip"><span className="status-dot" /> SEPOLIA NETWORK</span>
         <button className={`wallet-button ${connected ? "wallet-connected" : ""}`} onClick={onConnect} disabled={connectionBusy}>
           <Icon name="wallet" size={15} />
           {connectionBusy ? "Connecting…" : connected && address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "Connect wallet"}
         </button>
       </div>
     </header>
+  );
+}
+
+export function WalletConnectModal({
+  onClose,
+  onSelect,
+}: {
+  onClose: () => void;
+  onSelect: (source: "injected" | "walletconnect") => void;
+}) {
+  return (
+    <div className="wallet-modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        className="wallet-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="wallet-modal-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="wallet-modal-head">
+          <div>
+            <span className="section-kicker"><Icon name="wallet" size={14} /> CONNECT WALLET</span>
+            <h2 id="wallet-modal-title">Choose your entry point</h2>
+            <p>Connect a browser wallet, or scan with a mobile wallet using WalletConnect.</p>
+          </div>
+          <button className="icon-button" onClick={onClose} aria-label="Close wallet chooser"><Icon name="x" size={17} /></button>
+        </div>
+        <div className="wallet-choice-list">
+          <button className="wallet-choice" onClick={() => onSelect("injected")}>
+            <span className="wallet-choice-icon"><Icon name="bolt" size={20} /></span>
+            <span><strong>Browser wallet</strong><small>MetaMask, Rabby, Coinbase Wallet</small></span>
+            <Icon name="chevron" size={16} className="signal-chevron" />
+          </button>
+          <button className="wallet-choice" onClick={() => onSelect("walletconnect")}>
+            <span className="wallet-choice-icon wallet-choice-qr"><Icon name="scan" size={20} /></span>
+            <span><strong>WalletConnect</strong><small>Scan a QR code with your phone</small></span>
+            <Icon name="chevron" size={16} className="signal-chevron" />
+          </button>
+        </div>
+        <p className="wallet-modal-foot"><span className="status-dot" /> Sepolia only · your wallet stays in control</p>
+      </section>
+    </div>
   );
 }
 
