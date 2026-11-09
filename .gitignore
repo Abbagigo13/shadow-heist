@@ -3,3 +3,9 @@ dist/
 .vite/
 *.tsbuildinfo
 .DS_Store
+artifacts/
+cache/
+deployments/
+typechain-types/
+.hardhat/
+fhevmTemp/

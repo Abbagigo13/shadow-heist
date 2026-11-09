@@ -86,11 +86,15 @@ export function Icon({
 
 export function SiteHeader({
   connected,
+  address,
+  connectionBusy,
   view,
   onConnect,
   onLogoClick,
 }: {
   connected: boolean;
+  address?: string;
+  connectionBusy: boolean;
   view: MatchView;
   onConnect: () => void;
   onLogoClick: () => void;
@@ -107,9 +111,9 @@ export function SiteHeader({
       </div>
       <div className="topbar-actions">
         <span className="network-chip"><span className="status-dot" /> SEPOLIA MOCKNET</span>
-        <button className={`wallet-button ${connected ? "wallet-connected" : ""}`} onClick={onConnect}>
+        <button className={`wallet-button ${connected ? "wallet-connected" : ""}`} onClick={onConnect} disabled={connectionBusy}>
           <Icon name="wallet" size={15} />
-          {connected ? "0x73…4A1C" : "Connect wallet"}
+          {connectionBusy ? "Connecting…" : connected && address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "Connect wallet"}
         </button>
       </div>
     </header>

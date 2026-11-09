@@ -7,6 +7,7 @@ import {
   type ProcessingState,
   type RoundResult,
 } from "./game";
+import { connectSepoliaWallet, type WalletSession } from "./chain";
 import {
   GameView,
   LobbyView,
@@ -21,7 +22,8 @@ function makeMatchCode() {
 
 function App() {
   const [view, setView] = useState<MatchView>("lobby");
-  const [connected, setConnected] = useState(false);
+  const [wallet, setWallet] = useState<WalletSession | null>(null);
+  const [connectionBusy, setConnectionBusy] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
   const [joinCode, setJoinCode] = useState("");
   const [matchCode, setMatchCode] = useState("SHD-4K7J");
@@ -51,7 +53,6 @@ function App() {
   }
 
   function handleCreateMatch() {
-    setConnected(true);
     setMatchCode(makeMatchCode());
     setOpponentJoined(false);
     setJoinOpen(false);
@@ -61,12 +62,30 @@ function App() {
 
   function handleJoinMatch() {
     const normalized = joinCode.trim().toUpperCase();
-    setConnected(true);
     setMatchCode(normalized || "SHD-4K7J");
     setOpponentJoined(true);
     setJoinOpen(false);
     setView("waiting");
     setToastMessage("You slipped in. Your rival is already watching the door.");
+  }
+
+  async function handleWalletConnect() {
+    if (wallet) {
+      setWallet(null);
+      setToastMessage("Wallet disconnected. Demo mode is still available.");
+      return;
+    }
+
+    setConnectionBusy(true);
+    try {
+      const session = await connectSepoliaWallet();
+      setWallet(session);
+      setToastMessage("Wallet connected on Sepolia. Live contract wiring is ready.");
+    } catch (error) {
+      setToastMessage(error instanceof Error ? error.message : "Wallet connection failed.");
+    } finally {
+      setConnectionBusy(false);
+    }
   }
 
   function handleSimulateOpponent() {
@@ -142,16 +161,18 @@ function App() {
       <div className="ambient-glow ambient-glow-right" />
       <div className="grain" aria-hidden="true" />
       <SiteHeader
-        connected={connected}
+        connected={Boolean(wallet)}
+        address={wallet?.address}
+        connectionBusy={connectionBusy}
         view={view}
-        onConnect={() => setConnected((current) => !current)}
+        onConnect={handleWalletConnect}
         onLogoClick={handleBackToLobby}
       />
 
       <main className="page-frame">
         {view === "lobby" && (
           <LobbyView
-            connected={connected}
+            connected={Boolean(wallet)}
             joinOpen={joinOpen}
             joinCode={joinCode}
             onJoinCodeChange={setJoinCode}
