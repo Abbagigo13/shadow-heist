@@ -5,7 +5,7 @@ import {
   SHADOW_HEIST_ADDRESS,
   type WalletSession,
 } from "./chain";
-import type { Action } from "./game";
+import type { Action, ProcessingState } from "./game";
 
 export type LiveMatchState = {
   playerOne: string;
@@ -73,9 +73,12 @@ export async function submitLiveAction(
   wallet: WalletSession,
   matchId: bigint,
   action: Action,
+  onProgress?: (state: ProcessingState) => void,
 ) {
   const contractAddress = requireAddress();
-  const encrypted = await encryptAction(contractAddress, wallet.address, action);
+  onProgress?.("encrypting");
+  const encrypted = await encryptAction(contractAddress, wallet.address, action, wallet.eip1193Provider);
+  onProgress?.("submitting");
   const contract = getShadowHeistContract(wallet.signer);
   const transaction = await contract.submitAction(
     matchId,
@@ -83,6 +86,7 @@ export async function submitLiveAction(
     encrypted.inputProof,
   );
   const receipt = await transaction.wait();
+  onProgress?.("waiting");
   return { txHash: transactionHash(receipt) };
 }
 
@@ -120,7 +124,7 @@ export async function decryptLiveRound(wallet: WalletSession, matchId: bigint): 
     handles.pointsTwo,
     handles.eventCode,
   ] as string[];
-  const decrypted = await publiclyDecrypt(encryptedHandles);
+  const decrypted = await publiclyDecrypt(encryptedHandles, wallet.eip1193Provider);
   const clear = encryptedHandles.map((handle) => Number(decrypted.clearValues[handle as `0x${string}`]));
 
   return {
@@ -131,4 +135,23 @@ export async function decryptLiveRound(wallet: WalletSession, matchId: bigint): 
     pointsOpponent: clear[4] ?? 0,
     eventCode: clear[5] ?? 0,
   };
+}
+
+export async function waitForLiveMatchState(
+  wallet: WalletSession,
+  matchId: bigint,
+  predicate: (state: LiveMatchState) => boolean,
+  options: { timeoutMs?: number; intervalMs?: number } = {},
+) {
+  const timeoutMs = options.timeoutMs ?? 120_000;
+  const intervalMs = options.intervalMs ?? 2_500;
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const state = await readLiveMatch(wallet, matchId);
+    if (predicate(state)) return state;
+    await new Promise((resolve) => window.setTimeout(resolve, intervalMs));
+  }
+
+  throw new Error("Timed out while waiting for the other player on Sepolia.");
 }

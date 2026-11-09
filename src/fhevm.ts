@@ -6,6 +6,7 @@ import type { EIP1193Provider } from "viem";
 import type { Action } from "./game";
 
 let sdkPromise: Promise<ZamaSDK> | undefined;
+let sdkProvider: EIP1193Provider | undefined;
 
 function actionValue(action: Action): bigint {
   if (action === "steal") return 1n;
@@ -13,15 +14,17 @@ function actionValue(action: Action): bigint {
   return 3n;
 }
 
-export async function getZamaSdk(): Promise<ZamaSDK> {
-  const ethereum = window.ethereum;
+export async function getZamaSdk(provider?: EIP1193Provider): Promise<ZamaSDK> {
+  const ethereum = provider ?? window.ethereum;
   if (!ethereum) {
     throw new Error("A wallet is required to initialize FHEVM for Sepolia.");
   }
 
   const zamaEthereum = ethereum as unknown as EIP1193Provider;
 
-  sdkPromise ??= Promise.resolve(
+  if (!sdkPromise || sdkProvider !== zamaEthereum) {
+    sdkProvider = zamaEthereum;
+    sdkPromise = Promise.resolve(
     new ZamaSDK(
       createConfig({
         chains: [sepolia],
@@ -29,7 +32,8 @@ export async function getZamaSdk(): Promise<ZamaSDK> {
         relayers: { [sepolia.id]: web() },
       }),
     ),
-  );
+    );
+  }
 
   return sdkPromise;
 }
@@ -38,8 +42,9 @@ export async function encryptAction(
   contractAddress: string,
   userAddress: string,
   action: Action,
+  provider?: EIP1193Provider,
 ) {
-  const sdk = await getZamaSdk();
+  const sdk = await getZamaSdk(provider);
   return sdk.encrypt({
     values: [{ value: actionValue(action), type: "euint8" }],
     contractAddress: contractAddress as `0x${string}`,
@@ -47,7 +52,7 @@ export async function encryptAction(
   });
 }
 
-export async function publiclyDecrypt(handles: string[]) {
-  const sdk = await getZamaSdk();
+export async function publiclyDecrypt(handles: string[], provider?: EIP1193Provider) {
+  const sdk = await getZamaSdk(provider);
   return sdk.decryption.decryptPublicValues(handles as `0x${string}`[]);
 }

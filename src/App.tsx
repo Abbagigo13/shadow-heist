@@ -11,9 +11,19 @@ import {
   connectSepoliaWallet,
   connectWalletConnect,
   disconnectWallet,
+  SHADOW_HEIST_ADDRESS,
   type WalletSession,
   type WalletSource,
 } from "./chain";
+import {
+  createLiveMatch,
+  decryptLiveRound,
+  joinLiveMatch,
+  readLiveMatch,
+  resolveLiveRound,
+  submitLiveAction,
+  waitForLiveMatchState,
+} from "./liveGame";
 import {
   GameView,
   LobbyView,
@@ -35,6 +45,8 @@ function App() {
   const [joinOpen, setJoinOpen] = useState(false);
   const [joinCode, setJoinCode] = useState("");
   const [matchCode, setMatchCode] = useState("SHD-4K7J");
+  const [liveMode, setLiveMode] = useState(false);
+  const [liveMatchId, setLiveMatchId] = useState<bigint | null>(null);
   const [opponentJoined, setOpponentJoined] = useState(false);
   const [selectedAction, setSelectedAction] = useState<Action | null>(null);
   const [processing, setProcessing] = useState<ProcessingState>("idle");
@@ -60,17 +72,74 @@ function App() {
     timers.current = [];
   }
 
-  function handleCreateMatch() {
+  async function handleCreateMatch() {
+    setJoinOpen(false);
+
+    if (wallet && SHADOW_HEIST_ADDRESS) {
+      setConnectionBusy(true);
+      try {
+        setToastMessage("Creating the vault on Sepolia…");
+        const created = await createLiveMatch(wallet);
+        setLiveMode(true);
+        setLiveMatchId(created.matchId);
+        setMatchCode(created.matchId.toString());
+        setOpponentJoined(false);
+        setYourScore(0);
+        setOpponentScore(0);
+        setView("waiting");
+        setToastMessage(`Vault #${created.matchId.toString()} created. Share the match ID.`);
+      } catch (error) {
+        setToastMessage(error instanceof Error ? error.message : "Live vault creation failed.");
+      } finally {
+        setConnectionBusy(false);
+      }
+      return;
+    }
+
+    setLiveMode(false);
+    setLiveMatchId(null);
     setMatchCode(makeMatchCode());
     setOpponentJoined(false);
-    setJoinOpen(false);
     setView("waiting");
-    setToastMessage("Vault created. Share the match code with your rival.");
+    setToastMessage(wallet ? "Contract address missing; opened demo mode." : "Vault created in demo mode. Share the match code with your rival.");
   }
 
-  function handleJoinMatch() {
+  async function handleJoinMatch() {
     const normalized = joinCode.trim().toUpperCase();
+
+    if (wallet && SHADOW_HEIST_ADDRESS) {
+      const numericMatchId = normalized.replace(/^#/, "");
+      if (!/^\d+$/.test(numericMatchId)) {
+        setToastMessage("Live matches use the numeric on-chain match ID.");
+        return;
+      }
+
+      setConnectionBusy(true);
+      try {
+        const matchId = BigInt(numericMatchId);
+        setToastMessage(`Joining vault #${numericMatchId} on Sepolia…`);
+        await joinLiveMatch(wallet, matchId);
+        const state = await readLiveMatch(wallet, matchId);
+        setLiveMode(true);
+        setLiveMatchId(matchId);
+        setMatchCode(numericMatchId);
+        setOpponentJoined(state.playerTwo !== "0x0000000000000000000000000000000000000000");
+        setYourScore(0);
+        setOpponentScore(0);
+        setJoinOpen(false);
+        setView("waiting");
+        setToastMessage(`Joined vault #${numericMatchId}. Waiting for the host to play.`);
+      } catch (error) {
+        setToastMessage(error instanceof Error ? error.message : "Live vault join failed.");
+      } finally {
+        setConnectionBusy(false);
+      }
+      return;
+    }
+
     setMatchCode(normalized || "SHD-4K7J");
+    setLiveMode(false);
+    setLiveMatchId(null);
     setOpponentJoined(true);
     setJoinOpen(false);
     setView("waiting");
@@ -104,6 +173,26 @@ function App() {
     }
   }
 
+  async function refreshLiveMatch() {
+    if (!wallet || !liveMode || liveMatchId === null) return;
+    try {
+      const state = await readLiveMatch(wallet, liveMatchId);
+      setOpponentJoined(state.playerTwo !== "0x0000000000000000000000000000000000000000");
+      setRound(state.round);
+      setYourScore(state.scoreOne);
+      setOpponentScore(state.scoreTwo);
+    } catch (error) {
+      setToastMessage(error instanceof Error ? error.message : "Could not read the live vault.");
+    }
+  }
+
+  useEffect(() => {
+    if (!liveMode || !wallet || liveMatchId === null || view !== "waiting") return;
+    void refreshLiveMatch();
+    const interval = window.setInterval(() => void refreshLiveMatch(), 4_500);
+    return () => window.clearInterval(interval);
+  }, [liveMode, wallet, liveMatchId, view]);
+
   function handleSimulateOpponent() {
     setOpponentJoined(true);
     setToastMessage("Rival detected. Both seats are locked in.");
@@ -119,6 +208,8 @@ function App() {
   function handleBackToLobby() {
     clearRoundTimers();
     setView("lobby");
+    setLiveMode(false);
+    setLiveMatchId(null);
     setJoinOpen(false);
     setJoinCode("");
     setOpponentJoined(false);
@@ -127,8 +218,62 @@ function App() {
     setResult(null);
   }
 
-  function handleSubmitAction() {
+  async function handleSubmitAction() {
     if (!selectedAction || processing !== "idle") return;
+
+    if (liveMode && wallet && liveMatchId !== null) {
+      try {
+        await submitLiveAction(wallet, liveMatchId, selectedAction, setProcessing);
+        setProcessing("waiting");
+        const readyState = await waitForLiveMatchState(
+          wallet,
+          liveMatchId,
+          (state) => state.playerOneSubmitted && state.playerTwoSubmitted,
+        );
+
+        setProcessing("resolving");
+        if (!readyState.roundResolved) {
+          try {
+            await resolveLiveRound(wallet, liveMatchId);
+          } catch (error) {
+            const latestState = await readLiveMatch(wallet, liveMatchId);
+            if (!latestState.roundResolved) throw error;
+          }
+        }
+
+        const resolvedState = await waitForLiveMatchState(wallet, liveMatchId, (state) => state.roundResolved);
+        setProcessing("decrypting");
+        const decrypted = await decryptLiveRound(wallet, liveMatchId);
+        const isPlayerOne = wallet.address.toLowerCase() === resolvedState.playerOne.toLowerCase();
+        const playerAction = isPlayerOne ? decrypted.playerAction : decrypted.opponentAction;
+        const opponentAction = isPlayerOne ? decrypted.opponentAction : decrypted.playerAction;
+        const pointsYou = isPlayerOne ? decrypted.pointsYou : decrypted.pointsOpponent;
+        const pointsOpponent = isPlayerOne ? decrypted.pointsOpponent : decrypted.pointsYou;
+        const winner = decrypted.outcome === 0
+          ? "draw"
+          : (decrypted.outcome === 1) === isPlayerOne ? "you" : "opponent";
+        const liveResult: RoundResult = {
+          playerAction: playerAction === 1 ? "steal" : playerAction === 2 ? "guard" : "scout",
+          opponentAction: opponentAction === 1 ? "steal" : opponentAction === 2 ? "guard" : "scout",
+          winner,
+          pointsYou,
+          pointsOpponent,
+          eventTitle: decrypted.eventCode === 1 ? "Dead drop bonus" : "Silent alarm",
+          eventDescription: decrypted.eventCode === 1
+            ? "A hidden courier left an extra cache in the west wing."
+            : "The building went dark. Only the cleanest move gets paid.",
+        };
+        setRound(resolvedState.round);
+        setYourScore((score) => score + liveResult.pointsYou);
+        setOpponentScore((score) => score + liveResult.pointsOpponent);
+        setResult(liveResult);
+        setProcessing("resolved");
+      } catch (error) {
+        setProcessing("idle");
+        setToastMessage(error instanceof Error ? error.message : "Live round failed.");
+      }
+      return;
+    }
 
     const opponentAction = opponentSequence[(round - 1) % opponentSequence.length];
     const nextResult = calculateResult(selectedAction, opponentAction, round);
@@ -150,6 +295,11 @@ function App() {
   }
 
   function handleNextRound() {
+    if (liveMode) {
+      setToastMessage("This live contract round is complete. Create a new vault for another round.");
+      handleBackToLobby();
+      return;
+    }
     clearRoundTimers();
     setRound((currentRound) => currentRound + 1);
     setSelectedAction(null);
@@ -159,6 +309,10 @@ function App() {
   }
 
   function handleRematch() {
+    if (liveMode) {
+      handleBackToLobby();
+      return;
+    }
     clearRoundTimers();
     setRound(1);
     setYourScore(0);
@@ -195,6 +349,7 @@ function App() {
         {view === "lobby" && (
           <LobbyView
             connected={Boolean(wallet)}
+            liveReady={Boolean(wallet && SHADOW_HEIST_ADDRESS)}
             joinOpen={joinOpen}
             joinCode={joinCode}
             onJoinCodeChange={setJoinCode}
@@ -207,13 +362,17 @@ function App() {
           <WaitingView
             matchCode={matchCode}
             opponentJoined={opponentJoined}
+            liveMode={liveMode}
             onBack={handleBackToLobby}
             onSimulateOpponent={handleSimulateOpponent}
+            onRefresh={() => void refreshLiveMatch()}
             onEnter={handleEnterGame}
           />
         )}
         {view === "game" && (
           <GameView
+            matchCode={matchCode}
+            liveMode={liveMode}
             round={round}
             yourScore={yourScore}
             opponentScore={opponentScore}
@@ -232,9 +391,9 @@ function App() {
       <footer className="site-footer">
         <span>SHADOW HEIST / CONFIDENTIAL GAMING</span>
         <span className="footer-dot" />
-        <span>MOCKNET BUILD 0.1</span>
+        <span>{liveMode ? "SEPOLIA BUILD 0.2" : "MOCKNET BUILD 0.1"}</span>
         <span className="footer-spacer" />
-        <span className="footer-lock"><span className="status-dot" /> FHE READY · SIMULATED</span>
+        <span className="footer-lock"><span className="status-dot" /> {liveMode ? "FHE READY · LIVE" : "FHE READY · SIMULATED"}</span>
       </footer>
 
       {toastMessage && <Toast message={toastMessage} onDismiss={() => setToastMessage("")} />}

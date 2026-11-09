@@ -178,6 +178,7 @@ function SignalRow({ icon, title, copy }: { icon: IconName; title: string; copy:
 
 export function LobbyView({
   connected,
+  liveReady,
   joinOpen,
   joinCode,
   onJoinCodeChange,
@@ -186,6 +187,7 @@ export function LobbyView({
   onJoin,
 }: {
   connected: boolean;
+  liveReady: boolean;
   joinOpen: boolean;
   joinCode: string;
   onJoinCodeChange: (value: string) => void;
@@ -255,7 +257,7 @@ export function LobbyView({
           </div>
           <div className="wallet-note">
             <span className={`wallet-orb ${connected ? "is-on" : ""}`}><Icon name={connected ? "check" : "lock"} size={14} /></span>
-            <span>{connected ? "Wallet connected · demo mode" : "Connect your wallet when you’re ready"}</span>
+            <span>{liveReady ? "Wallet connected · live Sepolia ready" : connected ? "Wallet connected · demo mode" : "Connect your wallet when you’re ready"}</span>
             <Icon name="chevron" size={14} className="note-chevron" />
           </div>
         </div>
@@ -277,14 +279,18 @@ function ProgressSteps({ opponentJoined, inGame = false }: { opponentJoined: boo
 export function WaitingView({
   matchCode,
   opponentJoined,
+  liveMode,
   onBack,
   onSimulateOpponent,
+  onRefresh,
   onEnter,
 }: {
   matchCode: string;
   opponentJoined: boolean;
+  liveMode: boolean;
   onBack: () => void;
   onSimulateOpponent: () => void;
+  onRefresh: () => void;
   onEnter: () => void;
 }) {
   return (
@@ -304,7 +310,7 @@ export function WaitingView({
           </div>
           <div className="waiting-actions">
             {!opponentJoined ? (
-              <button className="primary-button compact-button" onClick={onSimulateOpponent}><span className="button-icon"><Icon name="users" size={17} /></span><span><strong>Simulate rival joining</strong><small>Mock the second wallet for this demo</small></span><Icon name="chevron" size={17} className="button-arrow" /></button>
+              <button className="primary-button compact-button" onClick={liveMode ? onRefresh : onSimulateOpponent}><span className="button-icon"><Icon name="users" size={17} /></span><span><strong>{liveMode ? "Refresh vault status" : "Simulate rival joining"}</strong><small>{liveMode ? "Read the live match on Sepolia" : "Mock the second wallet for this demo"}</small></span><Icon name="chevron" size={17} className="button-arrow" /></button>
             ) : (
               <button className="primary-button compact-button" onClick={onEnter}><span className="button-icon"><Icon name="vault" size={17} /></span><span><strong>Enter the vault</strong><small>Both seats are ready to play</small></span><Icon name="arrow" size={17} className="button-arrow" /></button>
             )}
@@ -314,7 +320,7 @@ export function WaitingView({
         <aside className="waiting-aside">
           <div className="status-card">
             <div className="status-card-top"><SectionKicker icon="users">Seat status</SectionKicker><span className={`live-badge ${opponentJoined ? "ready" : ""}`}><span className="status-dot" /> {opponentJoined ? "READY" : "OPEN"}</span></div>
-            <div className="seat-row"><span className="seat-avatar your-seat">YOU</span><div><strong>Player one</strong><small>0x73…4A1C · host</small></div><span className="seat-check"><Icon name="check" size={14} /></span></div>
+            <div className="seat-row"><span className="seat-avatar your-seat">YOU</span><div><strong>Player one</strong><small>{liveMode ? "Connected wallet · on-chain" : "0x73…4A1C · host"}</small></div><span className="seat-check"><Icon name="check" size={14} /></span></div>
             <div className="seat-line"><span /></div>
             <div className={`seat-row ${opponentJoined ? "seat-joined" : ""}`}><span className="seat-avatar opponent-seat">{opponentJoined ? "R" : "?"}</span><div><strong>{opponentJoined ? "Rival wallet" : "Waiting for rival"}</strong><small>{opponentJoined ? "0xB8…91DF · challenger" : "Share the code to unlock"}</small></div>{opponentJoined ? <span className="seat-check"><Icon name="check" size={14} /></span> : <span className="seat-waiting"><span className="status-dot" /></span>}</div>
           </div>
@@ -346,7 +352,7 @@ export function ActionCard({ action, selected, disabled, onSelect }: { action: A
   );
 }
 
-function ProcessingPanel({ state }: { state: ProcessingState }) {
+function ProcessingPanel({ state, liveMode }: { state: ProcessingState; liveMode: boolean }) {
   const stages: { state: ProcessingState; label: string }[] = [
     { state: "encrypting", label: "Seal" },
     { state: "submitting", label: "Submit" },
@@ -359,7 +365,7 @@ function ProcessingPanel({ state }: { state: ProcessingState }) {
 
   return (
     <div className={`processing-panel ${state !== "idle" ? "is-processing" : ""}`}>
-      <div className="processing-header"><span className="processing-orb"><Icon name={state === "idle" ? "lock" : state === "resolved" ? "check" : "bolt"} size={16} /></span><span><strong>{processingLabel(state)}</strong><small>{state === "idle" ? "Nothing leaves the vault in plain text." : "Mock transaction lifecycle"}</small></span><span className="processing-count">{state === "idle" ? "—" : `${Math.min(progress, stages.length).toString().padStart(2, "0")}/05`}</span></div>
+      <div className="processing-header"><span className="processing-orb"><Icon name={state === "idle" ? "lock" : state === "resolved" ? "check" : "bolt"} size={16} /></span><span><strong>{processingLabel(state)}</strong><small>{state === "idle" ? "Nothing leaves the vault in plain text." : liveMode ? "Sepolia transaction lifecycle" : "Mock transaction lifecycle"}</small></span><span className="processing-count">{state === "idle" ? "—" : `${Math.min(progress, stages.length).toString().padStart(2, "0")}/05`}</span></div>
       {state !== "idle" && <div className="processing-track"><span style={{ width: `${(progress / stages.length) * 100}%` }} /></div>}
       <div className="processing-stages">{stages.map((stage, index) => <span key={stage.state} className={`${index < progress ? "is-done" : ""} ${stage.state === state ? "is-current" : ""}`}><i />{stage.label}</span>)}</div>
     </div>
@@ -383,6 +389,8 @@ function ActionGlyph({ action }: { action: Action }) {
 }
 
 export function GameView({
+  matchCode,
+  liveMode,
   round,
   yourScore,
   opponentScore,
@@ -395,6 +403,8 @@ export function GameView({
   onRematch,
   onBack,
 }: {
+  matchCode: string;
+  liveMode: boolean;
   round: number;
   yourScore: number;
   opponentScore: number;
@@ -410,11 +420,11 @@ export function GameView({
   const locked = processing !== "idle";
   return (
     <div className="game-layout">
-      <div className="subpage-heading"><button className="back-button" onClick={onBack}><Icon name="back" size={16} /> Exit match</button><div className="subpage-meta"><span className="status-dot status-dot-bright" /> LIVE ROUND / ENCRYPTED STATE</div></div>
-      <div className="game-topline"><div><div className="hero-stamp"><Icon name="radio" size={13} /> MATCH IN PROGRESS / VAULT 4K7J</div><h1>Make your<br /><em>move.</em></h1></div><Scoreboard round={round} yourScore={yourScore} opponentScore={opponentScore} /></div>
+      <div className="subpage-heading"><button className="back-button" onClick={onBack}><Icon name="back" size={16} /> Exit match</button><div className="subpage-meta"><span className="status-dot status-dot-bright" /> {liveMode ? "SEPOLIA ROUND / ENCRYPTED STATE" : "DEMO ROUND / ENCRYPTED STATE"}</div></div>
+      <div className="game-topline"><div><div className="hero-stamp"><Icon name="radio" size={13} /> MATCH IN PROGRESS / VAULT {matchCode}</div><h1>Make your<br /><em>move.</em></h1></div><Scoreboard round={round} yourScore={yourScore} opponentScore={opponentScore} /></div>
       <div className="game-content">
         <section className="move-section"><div className="move-section-heading"><div><SectionKicker icon="target">Your angle</SectionKicker><h2>Pick one. Seal it.</h2></div><span className="move-lock-note"><Icon name="lock" size={14} /> Hidden from rival</span></div><div className="action-grid"><ActionCard action="steal" selected={selectedAction === "steal"} disabled={locked} onSelect={() => onSelectAction("steal")} /><ActionCard action="guard" selected={selectedAction === "guard"} disabled={locked} onSelect={() => onSelectAction("guard")} /><ActionCard action="scout" selected={selectedAction === "scout"} disabled={locked} onSelect={() => onSelectAction("scout")} /></div><div className="submit-row"><div className="submit-hint">{selectedAction ? <><span className="status-dot status-dot-bright" /> {actionMeta[selectedAction].label} selected · ready to seal</> : <><span className="status-dot" /> Choose an action to continue</>}</div><button className="seal-button" onClick={onSubmit} disabled={!selectedAction || locked}>{locked ? <><Icon name="lock" size={16} /> Sealed</> : <><Icon name="key" size={16} /> Seal my move</>}</button></div>{result && <RoundResolution result={result} onNextRound={onNextRound} onRematch={onRematch} />}</section>
-        <aside className="game-aside"><ProcessingPanel state={processing} /><div className="intel-card"><div className="intel-top"><SectionKicker icon="scan">Live intel</SectionKicker><span className="encrypted-label"><Icon name="lock" size={12} /> ENCRYPTED</span></div><div className="intel-visual"><div className="intel-lines"><span /><span /><span /><span /></div><div className="intel-core"><Icon name="vault" size={27} /></div><div className="intel-rings" /></div><h3>The rival’s move is sealed.</h3><p>Public observers can see a transaction. They cannot see the choice inside it.</p><div className="intel-footer"><span><span className="status-dot" /> Observer view</span><span>NO TELLS</span></div></div><div className="rules-mini"><span className="rules-mini-title">COUNTER CYCLE</span><div><span className="rule-pill pill-steal">STEAL</span><Icon name="chevron" size={13} /><span className="rule-pill pill-scout">SCOUT</span><Icon name="chevron" size={13} /><span className="rule-pill pill-guard">GUARD</span><Icon name="chevron" size={13} /></div><small>Every move has a counter. Never assume the obvious play.</small></div></aside>
+        <aside className="game-aside"><ProcessingPanel state={processing} liveMode={liveMode} /><div className="intel-card"><div className="intel-top"><SectionKicker icon="scan">Live intel</SectionKicker><span className="encrypted-label"><Icon name="lock" size={12} /> ENCRYPTED</span></div><div className="intel-visual"><div className="intel-lines"><span /><span /><span /><span /></div><div className="intel-core"><Icon name="vault" size={27} /></div><div className="intel-rings" /></div><h3>The rival’s move is sealed.</h3><p>Public observers can see a transaction. They cannot see the choice inside it.</p><div className="intel-footer"><span><span className="status-dot" /> Observer view</span><span>NO TELLS</span></div></div><div className="rules-mini"><span className="rules-mini-title">COUNTER CYCLE</span><div><span className="rule-pill pill-steal">STEAL</span><Icon name="chevron" size={13} /><span className="rule-pill pill-scout">SCOUT</span><Icon name="chevron" size={13} /><span className="rule-pill pill-guard">GUARD</span><Icon name="chevron" size={13} /></div><small>Every move has a counter. Never assume the obvious play.</small></div></aside>
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
 import { BrowserProvider, Contract, type Eip1193Provider, type JsonRpcSigner } from "ethers";
+import type { EIP1193Provider as ViemEip1193Provider } from "viem";
 
 export const SEPOLIA_CHAIN_ID = 11155111;
 export const SHADOW_HEIST_ADDRESS = (import.meta.env.VITE_SHADOW_HEIST_ADDRESS ?? "") as string;
@@ -25,6 +26,7 @@ export type WalletSession = {
   address: string;
   chainId: number;
   source: WalletSource;
+  eip1193Provider: ViemEip1193Provider;
   walletConnectProvider?: WalletConnectProvider;
 };
 
@@ -69,6 +71,7 @@ async function createWalletSession(
     address: await signer.getAddress(),
     chainId,
     source,
+    eip1193Provider: eip1193Provider as unknown as ViemEip1193Provider,
     walletConnectProvider: connector,
   };
 }
