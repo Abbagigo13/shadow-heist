@@ -18,3 +18,6 @@
 - [x] Add four demo heist events—Silent Alarm, Dead Drop Bonus, Blackout Protocol, and Inside Contact—with random selection and event-specific winner bonuses; preserve the deployed Sepolia contract's existing event codes 0 and 1 until the next contract redeploy.
 - [x] Add shareable match invites with a browser/mobile Share action, clipboard fallback, and automatic `/?match=...` join-drawer prefill for demo codes and live numeric match IDs.
 - [x] Add friendly wallet and transaction error recovery for rejected signatures, wrong network, WalletConnect configuration, gas balance, invalid/full vaults, timeouts, reverted transactions, and live-round retry actions.
+- [x] Add the ShadowHeistV2 contract foundation beside the deployed V1 contract, covering single-round and best-of-three modes, multi-round encrypted results and scores, rematches, cancellation, timeouts, profiles/directory registration, daily challenge configuration, and frontend/indexer-friendly lifecycle events.
+- [ ] Complete encrypted local and two-wallet Sepolia validation for ShadowHeistV2 before replacing the V1 frontend address and ABI.
+- [ ] Redeploy ShadowHeistV2 once on Sepolia, record the address, then migrate the frontend adapter to the V2 multi-round ABI in one cutover.

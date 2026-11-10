@@ -28,6 +28,27 @@ The official Zama FHEVM Hardhat plugin uses a local mock runtime for fast tests.
 
 The implementation follows Zama’s current [FHEVM Hardhat template](https://github.com/zama-ai/fhevm-hardhat-template), [FHEVM Solidity examples](https://raw.githubusercontent.com/zama-ai/fhevm-hardhat-template/main/contracts/FHECounter.sol), [Zama SDK encryption guide](https://github.com/zama-ai/sdk/blob/main/docs/gitbook/src/guides/encrypt-decrypt.md), and [Zama SDK quick start](https://github.com/zama-ai/sdk/blob/main/docs/gitbook/src/tutorials/quick-start.md).
 
+## ShadowHeistV2 foundation
+
+`contracts/ShadowHeistV2.sol` is implemented beside the deployed V1 contract. It supports single-round and best-of-three modes, configurable round storage, encrypted cumulative scores, per-round encrypted result handles, linked rematches, cancellation and timeout paths, public player-directory registration, daily challenge configuration, and frontend/indexer-friendly lifecycle events. The V2 deploy script is `deploy/02_deploy_shadow_heist_v2.ts` and is intentionally separate from the current deployment.
+
+The V2 contract keeps player moves and cumulative scores encrypted. Solidity contracts cannot read FHE-decrypted values inside a transaction, so trustless on-chain win/loss counters and sorted leaderboards are not claimed here. The frontend or an indexer should decrypt the public result handles and derive profiles, streaks, history, and leaderboards. This preserves move privacy and avoids storing false cleartext statistics on-chain.
+
+Compile and test the V2 foundation locally:
+
+```bash
+pnpm contracts:compile
+pnpm contracts:test
+```
+
+Deploy only V2 after the full encrypted two-wallet test passes:
+
+```bash
+pnpm contracts:deploy:v2:sepolia
+```
+
+Do not switch `VITE_SHADOW_HEIST_ADDRESS` or the frontend ABI to the V2 address until the V2 deployment is recorded and the frontend adapter has been migrated to `getEncryptedRoundResult`, `getEncryptedScore`, and the multi-round lifecycle.
+
 ## Sepolia deployment
 
 Set the Hardhat variables without committing secrets:

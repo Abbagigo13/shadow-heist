@@ -11,7 +11,8 @@
     "contracts:node": "hardhat node",
     "contracts:compile": "hardhat compile",
     "contracts:test": "hardhat test",
-    "contracts:deploy:sepolia": "hardhat deploy --network sepolia"
+    "contracts:deploy:sepolia": "hardhat deploy --network sepolia",
+    "contracts:deploy:v2:sepolia": "hardhat deploy --network sepolia --tags ShadowHeistV2"
   },
   "dependencies": {
     "@fhevm/solidity": "^0.11.1",

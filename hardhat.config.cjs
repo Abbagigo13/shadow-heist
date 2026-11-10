@@ -47,6 +47,7 @@ module.exports = {
     settings: {
       metadata: { bytecodeHash: "none" },
       optimizer: { enabled: true, runs: 800 },
+      viaIR: true,
       evmVersion: "cancun",
     },
   },
