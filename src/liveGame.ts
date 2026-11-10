@@ -10,12 +10,16 @@ import type { Action, ProcessingState } from "./game";
 export type LiveMatchState = {
   playerOne: string;
   playerTwo: string;
+  mode: number;
+  maxRounds: number;
   round: number;
   scoreOne: number;
   scoreTwo: number;
   playerOneSubmitted: boolean;
   playerTwoSubmitted: boolean;
   roundResolved: boolean;
+  finished: boolean;
+  cancelled: boolean;
 };
 
 export type LiveRoundResult = {
@@ -39,13 +43,8 @@ function transactionHash(receipt: ContractTransactionReceipt | null) {
   return receipt.hash;
 }
 
-export async function createLiveMatch(wallet: WalletSession) {
-  const contract = getShadowHeistContract(wallet.signer);
-  const transaction = await contract.createMatch();
-  const receipt = await transaction.wait();
-  if (!receipt) throw new Error("Match creation was not confirmed.");
-
-  const event = receipt.logs
+function findEvent(contract: ReturnType<typeof getShadowHeistContract>, receipt: ContractTransactionReceipt, name: string) {
+  return receipt.logs
     .map((log: { topics: readonly string[]; data: string }) => {
       try {
         return contract.interface.parseLog({ topics: [...log.topics], data: log.data });
@@ -53,8 +52,16 @@ export async function createLiveMatch(wallet: WalletSession) {
         return null;
       }
     })
-    .find((parsed: ReturnType<typeof contract.interface.parseLog> | null) => parsed?.name === "MatchCreated");
+    .find((parsed: ReturnType<typeof contract.interface.parseLog> | null) => parsed?.name === name);
+}
 
+export async function createLiveMatch(wallet: WalletSession, mode = 2, maxRounds = 3, challengeId = 0n) {
+  const contract = getShadowHeistContract(wallet.signer);
+  const transaction = await contract.createMatch(mode, maxRounds, challengeId);
+  const receipt = await transaction.wait();
+  if (!receipt) throw new Error("Match creation was not confirmed.");
+
+  const event = findEvent(contract, receipt, "MatchCreated");
   if (!event) throw new Error("MatchCreated was not found in the transaction receipt.");
   return {
     matchId: event.args[0] as bigint,
@@ -97,25 +104,48 @@ export async function resolveLiveRound(wallet: WalletSession, matchId: bigint) {
   return { txHash: transactionHash(receipt) };
 }
 
+export async function startNextLiveRound(wallet: WalletSession, matchId: bigint) {
+  const contract = getShadowHeistContract(wallet.signer);
+  const transaction = await contract.startNextRound(matchId);
+  const receipt = await transaction.wait();
+  return { txHash: transactionHash(receipt) };
+}
+
+export async function rematchLiveMatch(wallet: WalletSession, matchId: bigint) {
+  const contract = getShadowHeistContract(wallet.signer);
+  const transaction = await contract.rematch(matchId);
+  const receipt = await transaction.wait();
+  if (!receipt) throw new Error("Rematch was not confirmed.");
+  const event = findEvent(contract, receipt, "RematchCreated");
+  if (!event) throw new Error("RematchCreated was not found in the transaction receipt.");
+  return { matchId: event.args[1] as bigint, txHash: transactionHash(receipt) };
+}
+
 export async function readLiveMatch(wallet: WalletSession, matchId: bigint): Promise<LiveMatchState> {
   const contract = getShadowHeistContract(wallet.provider);
   const state = await contract.getMatch(matchId);
   return {
     playerOne: state.playerOne,
     playerTwo: state.playerTwo,
+    mode: Number(state.mode),
+    maxRounds: Number(state.maxRounds),
     round: Number(state.round),
-    scoreOne: Number(state.scoreOne),
-    scoreTwo: Number(state.scoreTwo),
+    scoreOne: 0,
+    scoreTwo: 0,
     playerOneSubmitted: state.playerOneSubmitted,
     playerTwoSubmitted: state.playerTwoSubmitted,
     roundResolved: state.roundResolved,
+    finished: state.finished,
+    cancelled: state.cancelled,
   };
 }
 
-export async function decryptLiveRound(wallet: WalletSession, matchId: bigint): Promise<LiveRoundResult> {
+export async function decryptLiveRound(wallet: WalletSession, matchId: bigint, round: number): Promise<LiveRoundResult> {
   const contractAddress = requireAddress();
   const contract = getShadowHeistContract(wallet.provider);
-  const handles = await contract.getEncryptedResult(matchId);
+  const handles = await contract.getEncryptedRoundResult(matchId, round);
+  if (!handles.resolved) throw new Error("This round has not been resolved yet.");
+
   const encryptedHandles = [
     handles.actionOne,
     handles.actionTwo,

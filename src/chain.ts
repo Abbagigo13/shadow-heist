@@ -6,16 +6,25 @@ export const SHADOW_HEIST_ADDRESS = (import.meta.env.VITE_SHADOW_HEIST_ADDRESS ?
 export const WALLETCONNECT_PROJECT_ID = (import.meta.env.VITE_WALLETCONNECT_PROJECT_ID ?? "") as string;
 
 export const shadowHeistAbi = [
-  "function createMatch() returns (uint256 matchId)",
+  "function createMatch(uint8 mode, uint8 maxRounds, uint256 challengeId) returns (uint256 matchId)",
   "function joinMatch(uint256 matchId)",
   "function submitAction(uint256 matchId, bytes encryptedAction, bytes inputProof)",
   "function resolveRound(uint256 matchId)",
-  "function getMatch(uint256 matchId) view returns (address playerOne, address playerTwo, uint8 round, uint8 scoreOne, uint8 scoreTwo, bool playerOneSubmitted, bool playerTwoSubmitted, bool roundResolved)",
-  "function getEncryptedResult(uint256 matchId) view returns (bytes32 actionOne, bytes32 actionTwo, bytes32 outcome, bytes32 pointsOne, bytes32 pointsTwo, bytes32 eventCode)",
-  "event MatchCreated(uint256 indexed matchId, address indexed playerOne)",
+  "function startNextRound(uint256 matchId)",
+  "function rematch(uint256 previousMatchId) returns (uint256 matchId)",
+  "function forfeitTimeout(uint256 matchId)",
+  "function registerProfile()",
+  "function getMatch(uint256 matchId) view returns (address playerOne, address playerTwo, uint8 mode, uint8 maxRounds, uint8 round, uint256 challengeId, uint64 createdAt, uint64 lastActionAt, bool playerOneSubmitted, bool playerTwoSubmitted, bool roundResolved, bool finished, bool cancelled)",
+  "function getEncryptedRoundResult(uint256 matchId, uint8 round) view returns (bytes32 actionOne, bytes32 actionTwo, bytes32 outcome, bytes32 pointsOne, bytes32 pointsTwo, bytes32 eventCode, bool resolved)",
+  "function getEncryptedScore(uint256 matchId) view returns (bytes32 scoreOne, bytes32 scoreTwo)",
+  "event MatchCreated(uint256 indexed matchId, address indexed playerOne, uint8 mode, uint8 maxRounds, uint256 challengeId)",
   "event PlayerJoined(uint256 indexed matchId, address indexed playerTwo)",
-  "event ActionSubmitted(uint256 indexed matchId, address indexed player)",
-  "event RoundReady(uint256 indexed matchId)",
+  "event ActionSubmitted(uint256 indexed matchId, uint8 indexed round, address indexed player)",
+  "event RoundReady(uint256 indexed matchId, uint8 indexed round)",
+  "event RoundResolved(uint256 indexed matchId, uint8 indexed round, uint8 eventCount)",
+  "event NextRoundStarted(uint256 indexed matchId, uint8 indexed round)",
+  "event MatchFinished(uint256 indexed matchId, uint8 indexed roundsPlayed)",
+  "event RematchCreated(uint256 indexed previousMatchId, uint256 indexed matchId)",
 ] as const;
 
 export type WalletSource = "injected" | "walletconnect";

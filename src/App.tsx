@@ -22,8 +22,10 @@ import {
   decryptLiveRound,
   joinLiveMatch,
   readLiveMatch,
+  rematchLiveMatch,
   resolveLiveRound,
   submitLiveAction,
+  startNextLiveRound,
   waitForLiveMatchState,
 } from "./liveGame";
 import {
@@ -119,7 +121,7 @@ function App() {
       try {
         setToastMessage("Creating the vault on Sepolia…");
         playSound("vault");
-        const created = await createLiveMatch(wallet);
+        const created = await createLiveMatch(wallet, 2, 3, 0n);
         setLiveMode(true);
         setLiveMatchId(created.matchId);
         setMatchCode(created.matchId.toString());
@@ -225,8 +227,6 @@ function App() {
       const state = await readLiveMatch(wallet, liveMatchId);
       setOpponentJoined(state.playerTwo !== "0x0000000000000000000000000000000000000000");
       setRound(state.round);
-      setYourScore(state.scoreOne);
-      setOpponentScore(state.scoreTwo);
     } catch (error) {
       notifyError(error, "Could not read the live vault.", { label: "Retry", run: () => void refreshLiveMatch() });
     }
@@ -351,7 +351,7 @@ function App() {
 
         const resolvedState = await waitForLiveMatchState(wallet, liveMatchId, (state) => state.roundResolved);
         setProcessing("decrypting");
-        const decrypted = await decryptLiveRound(wallet, liveMatchId);
+        const decrypted = await decryptLiveRound(wallet, liveMatchId, resolvedState.round);
         const isPlayerOne = wallet.address.toLowerCase() === resolvedState.playerOne.toLowerCase();
         const playerAction = isPlayerOne ? decrypted.playerAction : decrypted.opponentAction;
         const opponentAction = isPlayerOne ? decrypted.opponentAction : decrypted.playerAction;
@@ -404,10 +404,29 @@ function App() {
     ];
   }
 
-  function handleNextRound() {
+  async function handleNextRound() {
     if (liveMode) {
-      setToastMessage("This live contract round is complete. Create a new vault for another round.");
-      handleBackToLobby();
+      if (!wallet || liveMatchId === null) return;
+      try {
+        const state = await readLiveMatch(wallet, liveMatchId);
+        if (state.finished) {
+          setToastMessage("Best-of-three complete. Choose rematch to open another vault.");
+          return;
+        }
+        setConnectionBusy(true);
+        setToastMessage("Opening the next encrypted round…");
+        await startNextLiveRound(wallet, liveMatchId);
+        clearRoundTimers();
+        setRound((currentRound) => currentRound + 1);
+        setCountdownSeconds(ROUND_TIME_SECONDS);
+        setSelectedAction(null);
+        setProcessing("idle");
+        setResult(null);
+      } catch (error) {
+        notifyError(error, "Could not open the next live round.", { label: "Retry round", run: () => void handleNextRound() });
+      } finally {
+        setConnectionBusy(false);
+      }
       return;
     }
     clearRoundTimers();
@@ -419,9 +438,28 @@ function App() {
     setToastMessage("New round opened. The vault has already shifted.");
   }
 
-  function handleRematch() {
+  async function handleRematch() {
     if (liveMode) {
-      handleBackToLobby();
+      if (!wallet || liveMatchId === null) return;
+      try {
+        setConnectionBusy(true);
+        setToastMessage("Creating a linked rematch vault on Sepolia…");
+        const rematch = await rematchLiveMatch(wallet, liveMatchId);
+        setLiveMatchId(rematch.matchId);
+        setMatchCode(rematch.matchId.toString());
+        setRound(1);
+        setYourScore(0);
+        setOpponentScore(0);
+        setResult(null);
+        setProcessing("idle");
+        setOpponentJoined(true);
+        setView("waiting");
+        setToastMessage(`Rematch vault #${rematch.matchId.toString()} created.`);
+      } catch (error) {
+        notifyError(error, "Could not create the rematch vault.", { label: "Retry rematch", run: () => void handleRematch() });
+      } finally {
+        setConnectionBusy(false);
+      }
       return;
     }
     clearRoundTimers();

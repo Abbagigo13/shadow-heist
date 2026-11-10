@@ -11,7 +11,7 @@
 - [x] Apply a dark heist-game visual identity with suspenseful feedback, restrained animation, and polished empty, loading, error, and disabled states.
 - [x] Wire the deployed ShadowHeist contract into create-match, join-match, encrypted action submission, live match polling, on-chain resolution, and public result decryption when a wallet and contract address are configured.
 - [x] Support WalletConnect and injected wallets as the provider source for both ethers transactions and Zama FHEVM browser encryption.
-- [ ] Validate a complete two-wallet Sepolia round using the deployed contract address `0xFb430BbC236b2FAcDB11c81d79eE551DFad14AF7` and record any contract/UI edge cases found during that run.
+- [ ] Validate a complete two-wallet Sepolia best-of-three match using the deployed V2 address `0xcd8E285b61437EE0AfDdbD5EBA54c1A3ea6FBFb6` and record any contract/UI edge cases found during that run.
 - [x] Add a reactive synthesized sound layer with persistent mute control and cues for wallet connection, vault creation, opponent arrival, move sealing, errors, and round outcomes.
 - [x] Add a 20-second round countdown with audible ticks, urgent final seconds, and automatic Scout sealing when the player does not choose in time.
 - [x] Add a staged result reveal that presents encrypted handles, your move, the rival move, the random event, and the final score outcome in sequence.
@@ -19,5 +19,5 @@
 - [x] Add shareable match invites with a browser/mobile Share action, clipboard fallback, and automatic `/?match=...` join-drawer prefill for demo codes and live numeric match IDs.
 - [x] Add friendly wallet and transaction error recovery for rejected signatures, wrong network, WalletConnect configuration, gas balance, invalid/full vaults, timeouts, reverted transactions, and live-round retry actions.
 - [x] Add the ShadowHeistV2 contract foundation beside the deployed V1 contract, covering single-round and best-of-three modes, multi-round encrypted results and scores, rematches, cancellation, timeouts, profiles/directory registration, daily challenge configuration, and frontend/indexer-friendly lifecycle events.
-- [ ] Complete encrypted local and two-wallet Sepolia validation for ShadowHeistV2 before replacing the V1 frontend address and ABI.
-- [ ] Redeploy ShadowHeistV2 once on Sepolia, record the address, then migrate the frontend adapter to the V2 multi-round ABI in one cutover.
+- [ ] Complete encrypted local and two-wallet Sepolia validation for ShadowHeistV2.
+- [x] Deploy ShadowHeistV2 once on Sepolia at `0xcd8E285b61437EE0AfDdbD5EBA54c1A3ea6FBFb6` and migrate the frontend adapter to the V2 multi-round ABI in one cutover.
