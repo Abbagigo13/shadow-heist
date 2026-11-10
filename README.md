@@ -1,176 +1,83 @@
 # Shadow Heist
 
-Shadow Heist is a confidential two-player strategy arcade built with React, Solidity, and Zama FHEVM. Players secretly choose **Steal**, **Guard**, or **Scout**. Their actions are encrypted before they reach the contract, the contract evaluates the game logic over encrypted values, and the result is revealed only after both moves are committed.
+**Shadow Heist** is a two-player confidential strategy game built with React, Solidity, and [Zama FHEVM](https://www.zama.org/). Players secretly choose **Steal**, **Guard**, or **Scout**. Their moves are encrypted before submission, compared while encrypted, and revealed only when the round resolves.
 
-> The game is designed to make confidential computing tangible: you can play the complete flow in demo mode, then inspect the contract and wallet/FHE adapters that power the live path.
+> The vault is public. Your move isn’t.
 
-## Why build this game?
+## Why it matters
 
-Public blockchains make it difficult to hide strategy. If a player’s move is visible before an opponent commits, the game can be manipulated by observation. Shadow Heist uses FHE to create a small, understandable example of a sealed strategy round:
+On a public blockchain, an opponent could watch a move before choosing a counter. Shadow Heist demonstrates a fair sealed-action game: both players commit encrypted choices, the contract evaluates the matchup privately, and the result is revealed after both moves are locked.
 
-1. Player A chooses an action.
-2. Player B chooses an action.
-3. Both choices remain encrypted.
-4. The contract computes the winner and points without reading plaintext actions.
-5. The result handles become publicly decryptable after resolution.
+## Hackathon features
 
-The project is intentionally small enough for a two-minute demo, while exposing the important production seams: wallet connection, encrypted input proofs, ACL permissions, homomorphic comparisons, random events, public decryption, and on-chain lifecycle events.
+- Sepolia wallet support through injected wallets and WalletConnect.
+- Client-side Zama FHEVM encryption with encrypted input proofs.
+- Best-of-three matches using encrypted move evaluation and scores.
+- Public result reveal only after round resolution, with cinematic staged feedback.
+- Noir arcade UI with countdown, sound cues, responsive mobile layout, and rematches.
 
-## Explore the game
+## Play the game
 
-### Fastest path: demo mode
-
-The visible React experience works without a wallet:
-
-1. Run the app with `pnpm dev` or open the managed Preview.
-2. On the lobby, select **Create a vault**.
-3. In the waiting room, select **Simulate rival**.
-4. Enter the game.
-5. Pick **Steal**, **Guard**, or **Scout**.
-6. Select **Seal my move**.
-7. Watch the staged flow: encrypting, submitting, waiting, resolving, and decrypting.
-8. Read the revealed actions and result.
-9. Continue to the next round or start a rematch.
-
-The demo uses local React state and a deterministic rival sequence so the experience is repeatable without a chain or wallet.
-
-### Wallet exploration
-
-Click **Connect wallet** in the header. The chooser supports:
-
-- **Browser wallet:** MetaMask, Rabby, Coinbase Wallet, or another injected EIP-1193 wallet.
-- **WalletConnect:** QR connection for mobile wallets.
-
-The app validates Sepolia. To enable the WalletConnect QR option, create a public project ID and set:
-
-```bash
-VITE_WALLETCONNECT_PROJECT_ID=your_public_project_id
-```
-
-The environment template is [.env.example](./.env.example).
-
-## Current implementation status
-
-### Complete
-
-- Polished lobby, waiting room, and round UI.
-- Demo game state machine and result presentation.
-- Injected wallet connection with Sepolia validation.
-- WalletConnect QR connection with lazy loading.
-- FHEVM Solidity contract for match creation, joining, encrypted actions, encrypted resolution, and public result handles.
-- Current Zama SDK adapter for encrypted `euint8` action inputs and public result decryption.
-- Live transaction adapter for create, join, submit, resolve, read, and decrypt operations.
-- Hardhat deployment scaffold and passing contract smoke test.
-
-### Next integration slice
-
-The UI currently defaults to demo mode even after a wallet connects. The next slice is to wire the existing `src/liveGame.ts` functions into the React state machine:
-
-- represent live match IDs separately from demo match codes;
-- create and join real contract matches;
-- submit encrypted actions from the round screen;
-- wait for receipts and `RoundReady`;
-- resolve the round;
-- decrypt and render the contract result;
-- settle verified scores using the public decryption proof path.
-
-## Project map
-
-```text
-README.md                         Project overview and exploration guide
-CHAIN_INTEGRATION.md              Current FHEVM, wallet, and Sepolia setup
-docs/1.PRD.md                     Product requirements and game rules
-docs/2.DESIGN SYSTEM.md           Visual language and interaction rules
-docs/3.ARCHITECTURE.md            Frontend, wallet, FHE, and contract boundaries
-docs/4.DATABASE.md                Persistence decisions and future indexing
-docs/5.SECURITY.md                Privacy boundary and security checklist
-docs/6.CODE_STYLE.md              Code and contribution conventions
-docs/7.TESTING.md                 Test strategy and acceptance checks
-docs/8.AGENTS.md                  Contributor and agent workflow
-src/App.tsx                       React state machine and demo orchestration
-src/components.tsx                Presentational components and wallet modal
-src/game.ts                       Game rules and local result model
-src/chain.ts                      Injected and WalletConnect providers + ABI
-src/fhevm.ts                      Zama SDK encryption/decryption adapter
-src/liveGame.ts                   Real contract transaction adapter
-contracts/ShadowHeist.sol         Confidential FHEVM match contract
-deploy/                           Hardhat deploy scripts
-test/                             Contract tests
-```
-
-## Game rules
-
-| Move | Beats | Loses to | Identity |
-|---|---|---|---|
-| Steal | Scout | Guard | high risk |
-| Guard | Steal | Scout | counter play |
-| Scout | Guard | Steal | quiet edge |
-
-Equal moves draw. The demo alternates between a Silent Alarm and Dead Drop Bonus event. The live contract generates an encrypted random event bounded to two values and uses encrypted selections to calculate points.
-
-## Run locally
-
-### Frontend
+### Demo mode
 
 ```bash
 pnpm install
 pnpm dev
 ```
 
-The development server listens on port 3000.
+Open the app, choose **Create a vault**, select **Simulate rival joining**, enter the vault, and play a round. Demo mode needs no wallet.
 
-### Build
+### Live Sepolia mode
+
+The V2 contract is deployed at [`0xcd8E285b61437EE0AfDdbD5EBA54c1A3ea6FBFb6`](https://sepolia.etherscan.io/address/0xcd8E285b61437EE0AfDdbD5EBA54c1A3ea6FBFb6).
+
+Create `.env.local`:
+
+```env
+VITE_SHADOW_HEIST_ADDRESS=0xcd8E285b61437EE0AfDdbD5EBA54c1A3ea6FBFb6
+VITE_WALLETCONNECT_PROJECT_ID=your_public_project_id
+```
+
+Connect a wallet on Sepolia, create or join a numeric match, then submit encrypted moves from two wallets. Both wallets need Sepolia ETH for gas.
+
+## Privacy model
+
+- Moves are encrypted in the browser with Zama’s FHE public key.
+- The contract accepts encrypted `euint8` inputs and validates their associated proof.
+- FHEVM computes the matchup and points without exposing the plaintext moves during the round.
+- Round results are intentionally made publicly decryptable after resolution so both players can verify the outcome.
+
+Transaction hashes, wallet addresses, match metadata, and timing remain public on Sepolia. FHE protects the strategic move data, not the surrounding blockchain metadata.
+
+## Move cycle
+
+| Move | Beats | Loses to |
+|---|---|---|
+| Steal | Scout | Guard |
+| Guard | Steal | Scout |
+| Scout | Guard | Steal |
+
+Equal moves draw. Best-of-three matches progress through three encrypted rounds.
+
+## Development
 
 ```bash
 pnpm build
-```
-
-### Contract compile and test
-
-```bash
 pnpm contracts:compile
 pnpm contracts:test
 ```
 
-### Local Hardhat node
+## Key files
 
-```bash
-pnpm contracts:node
-pnpm hardhat deploy --network localhost
-```
+- `src/App.tsx` — game state machine and live/demo flow
+- `src/fhevm.ts` — Zama SDK encryption and public decryption
+- `src/liveGame.ts` — V2 contract transaction and read adapter
+- `src/chain.ts` — Sepolia wallet providers and V2 ABI
+- `contracts/ShadowHeistV2.sol` — confidential best-of-three contract
+- `test/ShadowHeistV2.cjs` — contract tests
 
-### Sepolia deployment
+## Stack
 
-Configure Hardhat variables without committing secrets:
+React, TypeScript, Vite, ethers v6, WalletConnect, Zama FHEVM SDK, Solidity, and Hardhat.
 
-```bash
-pnpm hardhat vars set MNEMONIC
-pnpm hardhat vars set INFURA_API_KEY
-pnpm contracts:deploy:sepolia
-```
-
-Then set the deployed contract address:
-
-```bash
-VITE_SHADOW_HEIST_ADDRESS=0xYourDeployedAddress
-```
-
-The wallet must be connected to Sepolia and funded with Sepolia ETH for live transactions.
-
-## Technical stack
-
-- React + TypeScript + Vite
-- ethers for EVM provider and contract calls
-- `@walletconnect/ethereum-provider` for QR wallet sessions
-- `@zama-fhe/sdk` for browser encryption and public decryption
-- `@fhevm/solidity` and `@fhevm/hardhat-plugin` for the FHEVM contract
-- Hardhat + hardhat-deploy
-- Sepolia for the target live network
-
-## Documentation guide
-
-Start with [the PRD](./docs/1.PRD.md) to understand the product. Read [the architecture](./docs/3.ARCHITECTURE.md) to trace the code. Read [the security document](./docs/5.SECURITY.md) before changing encrypted state or public reveal behavior. Use [the testing guide](./docs/7.TESTING.md) before submitting a contract or wallet change.
-
-## Sources
-
-The integration follows the current Zama and Reown documentation referenced in [CHAIN_INTEGRATION.md](./CHAIN_INTEGRATION.md), including the [Zama FHEVM Hardhat template](https://github.com/zama-ai/fhevm-hardhat-template), [Zama SDK encryption guide](https://github.com/zama-ai/sdk/blob/main/docs/gitbook/src/guides/encrypt-decrypt.md), and [Reown Ethereum provider documentation](https://docs.reown.com/advanced/providers/ethereum).
+Built for the **Zama Developer Program — Mainnet Season 5: Confidential Gaming**.
