@@ -3,6 +3,27 @@ export type RecoveryAction = {
   run: () => void;
 };
 
+export type WalletErrorCode =
+  | "missing-project-id"
+  | "rejected"
+  | "request-pending"
+  | "modal-closed"
+  | "switch-rejected"
+  | "switch-unsupported"
+  | "wrong-network"
+  | "init-failed";
+
+/** An error whose message is already safe and clear to show a player. */
+export class WalletError extends Error {
+  code: WalletErrorCode;
+
+  constructor(code: WalletErrorCode, message: string) {
+    super(message);
+    this.name = "WalletError";
+    this.code = code;
+  }
+}
+
 function errorText(error: unknown) {
   if (typeof error === "string") return error;
   if (!error || typeof error !== "object") return "";
@@ -11,6 +32,8 @@ function errorText(error: unknown) {
 }
 
 export function friendlyError(error: unknown, fallback: string) {
+  if (error instanceof WalletError) return error.message;
+
   const text = errorText(error);
   const normalized = text.toLowerCase();
 

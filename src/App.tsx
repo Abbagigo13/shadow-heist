@@ -10,12 +10,13 @@ import {
   type RoundResult,
 } from "./game";
 import {
-  connectSepoliaWallet,
   connectWalletConnect,
   disconnectWallet,
+  refreshWalletSession,
+  restoreWalletSession,
   SHADOW_HEIST_ADDRESS,
+  watchWallet,
   type WalletSession,
-  type WalletSource,
 } from "./chain";
 import {
   createLiveMatch,
@@ -34,7 +35,6 @@ import {
   LobbyView,
   SiteHeader,
   Toast,
-  WalletConnectModal,
   WaitingView,
 } from "./components";
 import { isSoundMuted, playSound, setSoundMuted } from "./sound";
@@ -51,7 +51,6 @@ function App() {
   const [showLanding, setShowLanding] = useState(true);
   const [wallet, setWallet] = useState<WalletSession | null>(null);
   const [connectionBusy, setConnectionBusy] = useState(false);
-  const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
   const [joinCode, setJoinCode] = useState("");
   const [matchCode, setMatchCode] = useState("SHD-4K7J");
@@ -195,7 +194,7 @@ function App() {
     setToastMessage("You slipped in. Your rival is already watching the door.");
   }
 
-  async function handleWalletConnect(source: WalletSource) {
+  async function handleWalletConnect() {
     setRecoveryAction(null);
     if (wallet) {
       try {
@@ -210,19 +209,48 @@ function App() {
 
     setConnectionBusy(true);
     try {
-      const session = source === "walletconnect"
-        ? await connectWalletConnect()
-        : await connectSepoliaWallet();
+      const session = await connectWalletConnect();
       setWallet(session);
       playSound("connect");
-      setWalletModalOpen(false);
-      setToastMessage(`${source === "walletconnect" ? "WalletConnect" : "Browser wallet"} connected on Sepolia.`);
+      setToastMessage("Wallet connected on Sepolia.");
     } catch (error) {
-      notifyError(error, "Wallet connection failed.", { label: "Retry", run: () => void handleWalletConnect(source) });
+      notifyError(error, "Wallet connection failed.", { label: "Retry", run: () => void handleWalletConnect() });
     } finally {
       setConnectionBusy(false);
     }
   }
+
+  useEffect(() => {
+    let cancelled = false;
+    void restoreWalletSession().then((session) => {
+      if (session && !cancelled) setWallet(session);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!wallet) return;
+    return watchWallet(wallet, {
+      onLost: (reason) => {
+        setWallet(null);
+        setToastMessage(
+          reason === "wrong-network"
+            ? "Your wallet left Sepolia. Reconnect to keep playing."
+            : "Wallet disconnected. Demo mode is still available.",
+        );
+      },
+      onAccountChange: () => {
+        void refreshWalletSession(wallet)
+          .then((next) => {
+            setWallet(next);
+            setToastMessage("Wallet account changed.");
+          })
+          .catch(() => setWallet(null));
+      },
+    });
+  }, [wallet]);
 
   async function refreshLiveMatch() {
     if (!wallet || !liveMode || liveMatchId === null) return;
@@ -500,13 +528,7 @@ function App() {
         address={wallet?.address}
         connectionBusy={connectionBusy}
         view={view}
-        onConnect={() => {
-          if (wallet) {
-            void handleWalletConnect("injected");
-          } else {
-            setWalletModalOpen(true);
-          }
-        }}
+        onConnect={() => void handleWalletConnect()}
         onLogoClick={handleBackToLobby}
         soundMuted={soundMuted}
         onToggleSound={handleToggleSound}
@@ -568,12 +590,6 @@ function App() {
       </footer>
 
       {toastMessage && <Toast message={toastMessage} error={Boolean(recoveryAction)} actionLabel={recoveryAction?.label} onAction={() => { const action = recoveryAction; setRecoveryAction(null); action?.run(); }} onDismiss={() => { setToastMessage(""); setRecoveryAction(null); }} />}
-      {walletModalOpen && !wallet && (
-        <WalletConnectModal
-          onClose={() => setWalletModalOpen(false)}
-          onSelect={(source) => void handleWalletConnect(source)}
-        />
-      )}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { BrowserProvider, Contract, type Eip1193Provider, type JsonRpcSigner } from "ethers";
 import type { EIP1193Provider as ViemEip1193Provider } from "viem";
+import { WalletError } from "./errors";
 
 export const SEPOLIA_CHAIN_ID = 11155111;
 export const SHADOW_HEIST_ADDRESS = (import.meta.env.VITE_SHADOW_HEIST_ADDRESS ?? "") as string;
@@ -27,98 +28,228 @@ export const shadowHeistAbi = [
   "event RematchCreated(uint256 indexed previousMatchId, uint256 indexed matchId)",
 ] as const;
 
-export type WalletSource = "injected" | "walletconnect";
-
 export type WalletSession = {
   provider: BrowserProvider;
   signer: JsonRpcSigner;
   address: string;
   chainId: number;
-  source: WalletSource;
   eip1193Provider: ViemEip1193Provider;
-  walletConnectProvider?: WalletConnectProvider;
+  walletConnectProvider: WalletConnectProvider;
 };
 
-type WalletConnectProvider = Eip1193Provider & {
+export type WalletConnectProvider = Eip1193Provider & {
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
   session?: unknown;
+  on: (event: string, listener: (...args: unknown[]) => void) => void;
+  removeListener: (event: string, listener: (...args: unknown[]) => void) => void;
+};
+
+const SEPOLIA_CHAIN_HEX = `0x${SEPOLIA_CHAIN_ID.toString(16)}`;
+const SEPOLIA_RPC_URL = "https://ethereum-sepolia-rpc.publicnode.com";
+
+const SEPOLIA_PARAMS = {
+  chainId: SEPOLIA_CHAIN_HEX,
+  chainName: "Sepolia",
+  nativeCurrency: { name: "Sepolia Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: [SEPOLIA_RPC_URL],
+  blockExplorerUrls: ["https://sepolia.etherscan.io"],
 };
 
 let walletConnectProvider: WalletConnectProvider | null = null;
 
-function getEthereum(): Eip1193Provider {
-  if (!window.ethereum) {
-    throw new Error("No injected wallet found. Choose WalletConnect to use a mobile wallet.");
+function errorCode(error: unknown): number | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const { code, error: inner } = error as { code?: unknown; error?: unknown };
+  if (typeof code === "number") return code;
+  return inner ? errorCode(inner) : undefined;
+}
+
+function errorMessage(error: unknown): string {
+  if (typeof error === "string") return error.toLowerCase();
+  if (!error || typeof error !== "object") return "";
+  const { message } = error as { message?: unknown };
+  return typeof message === "string" ? message.toLowerCase() : "";
+}
+
+function isRejected(error: unknown) {
+  const message = errorMessage(error);
+  return errorCode(error) === 4001 || /user (rejected|denied|cancel)|rejected the request|request rejected/.test(message);
+}
+
+/** Turns anything a wallet or WalletConnect throws into a clear message for the player. */
+function toWalletError(error: unknown): Error {
+  if (error instanceof WalletError) return error;
+  const message = errorMessage(error);
+
+  if (errorCode(error) === -32002 || /already pending|already processing/.test(message)) {
+    return new WalletError("request-pending", "Your wallet already has a request waiting. Open your wallet, approve or reject it, then try again.");
   }
-  return window.ethereum;
+  if (/closed modal|connection request reset|proposal expired|modal closed/.test(message)) {
+    return new WalletError("modal-closed", "WalletConnect was closed before connecting. Press Connect wallet and scan the QR code again.");
+  }
+  if (isRejected(error)) {
+    return new WalletError("rejected", "Wallet approval was cancelled. Nothing was submitted.");
+  }
+  return error instanceof Error ? error : new Error("Wallet connection failed.");
 }
 
 function ensureProjectId() {
   if (!WALLETCONNECT_PROJECT_ID) {
-    throw new Error("WalletConnect needs VITE_WALLETCONNECT_PROJECT_ID in the project environment.");
+    throw new WalletError(
+      "missing-project-id",
+      "WalletConnect is not set up for this build. Add VITE_WALLETCONNECT_PROJECT_ID to the environment and redeploy.",
+    );
   }
 }
 
-async function createWalletSession(
-  eip1193Provider: Eip1193Provider,
-  source: WalletSource,
-  connector?: WalletConnectProvider,
-): Promise<WalletSession> {
-  const provider = new BrowserProvider(eip1193Provider);
-  const network = await provider.getNetwork();
-  const chainId = Number(network.chainId);
+async function readChainId(provider: WalletConnectProvider) {
+  return Number(await provider.request({ method: "eth_chainId" }));
+}
 
-  if (chainId !== SEPOLIA_CHAIN_ID) {
-    throw new Error("Shadow Heist is currently configured for Sepolia. Switch networks in your wallet.");
+async function waitForSepolia(provider: WalletConnectProvider, timeoutMs = 4000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if ((await readChainId(provider)) === SEPOLIA_CHAIN_ID) return true;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return (await readChainId(provider)) === SEPOLIA_CHAIN_ID;
+}
+
+/** Switches the wallet to Sepolia, adding the network first when the wallet does not know it. */
+async function ensureSepolia(provider: WalletConnectProvider) {
+  if ((await readChainId(provider)) === SEPOLIA_CHAIN_ID) return;
+
+  try {
+    await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: SEPOLIA_CHAIN_HEX }] });
+  } catch (switchError) {
+    if (errorCode(switchError) === -32002) throw toWalletError(switchError);
+    if (isRejected(switchError)) {
+      throw new WalletError("switch-rejected", "Switching to Sepolia was declined. Approve the network switch in your wallet to play.");
+    }
+
+    // 4902 = chain not added. Some wallets report it only through the message text.
+    const unknownChain = errorCode(switchError) === 4902 || /unrecognized chain|not been added|unknown chain|chain not added|not supported/.test(errorMessage(switchError));
+    if (!unknownChain) throw toWalletError(switchError);
+
+    try {
+      await provider.request({ method: "wallet_addEthereumChain", params: [SEPOLIA_PARAMS] });
+    } catch (addError) {
+      if (errorCode(addError) === -32002) throw toWalletError(addError);
+      if (isRejected(addError)) {
+        throw new WalletError("switch-rejected", "Adding Sepolia was declined. Approve it in your wallet to play.");
+      }
+      throw new WalletError(
+        "switch-unsupported",
+        "Your wallet could not add Sepolia. Add it manually (chain ID 11155111), then reconnect.",
+      );
+    }
   }
 
+  if (!(await waitForSepolia(provider))) {
+    throw new WalletError("wrong-network", "Your wallet is still on another network. Switch to Sepolia in your wallet, then reconnect.");
+  }
+}
+
+async function createWalletSession(connector: WalletConnectProvider): Promise<WalletSession> {
+  await ensureSepolia(connector);
+
+  // Build the ethers provider only after the switch so it never sees a stale network.
+  const provider = new BrowserProvider(connector);
   const signer = await provider.getSigner();
   return {
     provider,
     signer,
     address: await signer.getAddress(),
-    chainId,
-    source,
-    eip1193Provider: eip1193Provider as unknown as ViemEip1193Provider,
+    chainId: SEPOLIA_CHAIN_ID,
+    eip1193Provider: connector as unknown as ViemEip1193Provider,
     walletConnectProvider: connector,
   };
 }
 
-export async function connectSepoliaWallet(): Promise<WalletSession> {
-  const ethereum = getEthereum();
-  await ethereum.request({ method: "eth_requestAccounts" });
-  return createWalletSession(ethereum, "injected");
+async function getWalletConnectProvider(): Promise<WalletConnectProvider> {
+  ensureProjectId();
+  if (walletConnectProvider) return walletConnectProvider;
+
+  try {
+    const { EthereumProvider } = await import("@walletconnect/ethereum-provider");
+    walletConnectProvider = (await EthereumProvider.init({
+      projectId: WALLETCONNECT_PROJECT_ID,
+      optionalChains: [SEPOLIA_CHAIN_ID],
+      optionalMethods: ["wallet_switchEthereumChain", "wallet_addEthereumChain"],
+      rpcMap: { [SEPOLIA_CHAIN_ID]: SEPOLIA_RPC_URL },
+      showQrModal: true,
+      metadata: {
+        name: "Shadow Heist",
+        description: "Confidential two-player strategy on Zama FHEVM",
+        url: window.location.origin,
+        icons: [`${window.location.origin}/shadow-heist-logo.svg`],
+      },
+    })) as unknown as WalletConnectProvider;
+    return walletConnectProvider;
+  } catch (error) {
+    walletConnectProvider = null;
+    throw new WalletError("init-failed", `WalletConnect could not start: ${error instanceof Error ? error.message : "unknown error"}. Refresh and try again.`);
+  }
 }
 
+/** Opens the WalletConnect QR modal, then makes sure the wallet is on Sepolia. */
 export async function connectWalletConnect(): Promise<WalletSession> {
-  ensureProjectId();
-
-  const { EthereumProvider } = await import("@walletconnect/ethereum-provider");
-
-  walletConnectProvider ??= await EthereumProvider.init({
-    projectId: WALLETCONNECT_PROJECT_ID,
-    optionalChains: [SEPOLIA_CHAIN_ID],
-    showQrModal: true,
-    metadata: {
-      name: "Shadow Heist",
-      description: "Confidential two-player strategy on Zama FHEVM",
-      url: window.location.origin,
-      icons: [`${window.location.origin}/shadow-heist-logo.svg`],
-    },
-  });
-
-  if (!walletConnectProvider.session) {
-    await walletConnectProvider.connect();
+  const connector = await getWalletConnectProvider();
+  try {
+    if (!connector.session) await connector.connect();
+    return await createWalletSession(connector);
+  } catch (error) {
+    throw toWalletError(error);
   }
+}
 
-  return createWalletSession(walletConnectProvider, "walletconnect", walletConnectProvider);
+/** Re-opens a saved WalletConnect session after a page refresh. Returns null when there is none. */
+export async function restoreWalletSession(): Promise<WalletSession | null> {
+  if (!WALLETCONNECT_PROJECT_ID) return null;
+  try {
+    const connector = await getWalletConnectProvider();
+    if (!connector.session) return null;
+    return await createWalletSession(connector);
+  } catch {
+    return null;
+  }
+}
+
+/** Calls `onLost` when the wallet disconnects or leaves Sepolia, and `onAccountChange` when the account changes. */
+export function watchWallet(
+  session: WalletSession,
+  handlers: { onLost: (reason: "disconnected" | "wrong-network") => void; onAccountChange: () => void },
+) {
+  const connector = session.walletConnectProvider;
+  const onDisconnect = () => handlers.onLost("disconnected");
+  const onChain = (chainId: unknown) => {
+    if (Number(chainId) !== SEPOLIA_CHAIN_ID) handlers.onLost("wrong-network");
+  };
+  const onAccounts = (accounts: unknown) => {
+    if (Array.isArray(accounts) && accounts.length === 0) handlers.onLost("disconnected");
+    else handlers.onAccountChange();
+  };
+
+  connector.on("disconnect", onDisconnect);
+  connector.on("chainChanged", onChain);
+  connector.on("accountsChanged", onAccounts);
+  return () => {
+    connector.removeListener("disconnect", onDisconnect);
+    connector.removeListener("chainChanged", onChain);
+    connector.removeListener("accountsChanged", onAccounts);
+  };
 }
 
 export async function disconnectWallet(session: WalletSession) {
-  if (session.source === "walletconnect" && session.walletConnectProvider?.session) {
+  if (session.walletConnectProvider.session) {
     await session.walletConnectProvider.disconnect();
   }
+}
+
+/** Rebuilds the session for the account the wallet is now using. */
+export async function refreshWalletSession(session: WalletSession): Promise<WalletSession> {
+  return createWalletSession(session.walletConnectProvider);
 }
 
 export function getShadowHeistContract(signerOrProvider: JsonRpcSigner | BrowserProvider) {
