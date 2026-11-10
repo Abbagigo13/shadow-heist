@@ -179,3 +179,28 @@ h1 em { color: var(--acid); font-style: normal; }
   .landing-banner-label { flex-wrap: wrap; gap: 7px; font-size: 8px; }
   .landing-banner-label span:last-child { margin-left: 0; width: 100%; }
 }
+
+.forfeit-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 196, 87, 0.4);
+  border-radius: 14px;
+  background: rgba(255, 196, 87, 0.07);
+}
+
+.forfeit-card > span {
+  display: grid;
+  gap: 2px;
+  flex: 1;
+}
+
+.forfeit-card small {
+  opacity: 0.7;
+}
+
+.match-final {
+  margin-top: 18px;
+}

@@ -49,6 +49,12 @@ export function friendlyError(error: unknown, fallback: string) {
   if (normalized.includes("insufficient funds") || normalized.includes("fee data") || normalized.includes("underpriced")) {
     return "This wallet cannot pay the Sepolia gas fee. Add Sepolia ETH, then retry.";
   }
+  if (normalized.includes("match is closed") || normalized.includes("round is closed")) {
+    return "This vault is closed. The match already ended or was cancelled.";
+  }
+  if (normalized.includes("timeout not reached")) {
+    return "The rival still has time to move. You can claim a forfeit after 30 minutes of silence.";
+  }
   if (normalized.includes("match does not exist")) {
     return "That vault does not exist on Sepolia. Check the invite link or match ID.";
   }

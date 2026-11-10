@@ -19,11 +19,16 @@ import {
   type WalletSession,
 } from "./chain";
 import {
+  canClaimForfeit,
+  cancelLiveMatch,
+  claimLiveForfeit,
   createLiveMatch,
   decryptLiveRound,
+  decryptLiveScore,
   joinLiveMatch,
   readLiveMatch,
   rematchLiveMatch,
+  type LiveMatchState,
   resolveLiveRound,
   submitLiveAction,
   startNextLiveRound,
@@ -31,6 +36,7 @@ import {
 } from "./liveGame";
 import {
   GameView,
+  type MatchOutcome,
   LandingView,
   LobbyView,
   SiteHeader,
@@ -62,8 +68,10 @@ function App() {
   const [revealStage, setRevealStage] = useState(0);
   const [processing, setProcessing] = useState<ProcessingState>("idle");
   const [round, setRound] = useState(1);
-  const [yourScore, setYourScore] = useState(2);
-  const [opponentScore, setOpponentScore] = useState(1);
+  const [yourScore, setYourScore] = useState(0);
+  const [opponentScore, setOpponentScore] = useState(0);
+  const [matchOutcome, setMatchOutcome] = useState<MatchOutcome | null>(null);
+  const [forfeitClaimable, setForfeitClaimable] = useState(false);
   const [result, setResult] = useState<RoundResult | null>(null);
   const [toastMessage, setToastMessage] = useState("");
   const [recoveryAction, setRecoveryAction] = useState<RecoveryAction | null>(null);
@@ -78,6 +86,10 @@ function App() {
   const selectedActionRef = useRef<Action | null>(null);
 
   selectedActionRef.current = selectedAction;
+  const yourScoreRef = useRef(0);
+  const opponentScoreRef = useRef(0);
+  yourScoreRef.current = yourScore;
+  opponentScoreRef.current = opponentScore;
 
   useEffect(() => {
     setSoundMuted(soundMuted);
@@ -95,7 +107,7 @@ function App() {
     setShowLanding(false);
     setJoinCode(sharedMatch);
     setJoinOpen(true);
-    setToastMessage(`Invite loaded for match ${sharedMatch}. Choose your entry point.`);
+    setToastMessage(`Invite loaded for match ${sharedMatch}. Connect your wallet to join.`);
     window.history.replaceState({}, "", window.location.pathname);
   }, []);
 
@@ -106,6 +118,14 @@ function App() {
   function clearRoundTimers() {
     timers.current.forEach((timer) => window.clearTimeout(timer));
     timers.current = [];
+  }
+
+  function resetMatchProgress() {
+    setRound(1);
+    setYourScore(0);
+    setOpponentScore(0);
+    setMatchOutcome(null);
+    setForfeitClaimable(false);
   }
 
   function notifyError(error: unknown, fallback: string, recovery?: RecoveryAction) {
@@ -128,8 +148,7 @@ function App() {
         setLiveMatchId(created.matchId);
         setMatchCode(created.matchId.toString());
         setOpponentJoined(false);
-        setYourScore(0);
-        setOpponentScore(0);
+        resetMatchProgress();
         setView("waiting");
         setToastMessage(`Vault #${created.matchId.toString()} created. Share the match ID.`);
       } catch (error) {
@@ -144,6 +163,7 @@ function App() {
     setLiveMatchId(null);
     setMatchCode(makeMatchCode());
     setOpponentJoined(false);
+    resetMatchProgress();
     setView("waiting");
     playSound("vault");
     setToastMessage(wallet ? "Contract address missing; opened demo mode." : "Vault created in demo mode. Share the match code with your rival.");
@@ -171,8 +191,7 @@ function App() {
         setLiveMatchId(matchId);
         setMatchCode(numericMatchId);
         setOpponentJoined(state.playerTwo !== "0x0000000000000000000000000000000000000000");
-        setYourScore(0);
-        setOpponentScore(0);
+        resetMatchProgress();
         setJoinOpen(false);
         setView("waiting");
         setToastMessage(`Joined vault #${numericMatchId}. Waiting for the host to play.`);
@@ -185,6 +204,7 @@ function App() {
     }
 
     setMatchCode(normalized || "SHD-4K7J");
+    resetMatchProgress();
     setLiveMode(false);
     setLiveMatchId(null);
     setOpponentJoined(true);
@@ -353,6 +373,122 @@ function App() {
     setSelectedAction(null);
     setProcessing("idle");
     setResult(null);
+    resetMatchProgress();
+  }
+
+  /** Waits for the rival, resolves the round, and reveals it. Safe to call again after an error. */
+  async function continueLiveRound(activeWallet: WalletSession, matchId: bigint) {
+    setForfeitClaimable(false);
+    try {
+      setProcessing("waiting");
+      const readyState = await waitForLiveMatchState(
+        activeWallet,
+        matchId,
+        (state) => state.roundResolved || state.finished || state.cancelled || (state.playerOneSubmitted && state.playerTwoSubmitted) || canClaimForfeit(state),
+        { timeoutMs: 10 * 60_000 },
+      );
+
+      if (readyState.cancelled) throw new Error("match is closed");
+      if (!readyState.roundResolved && !(readyState.playerOneSubmitted && readyState.playerTwoSubmitted)) {
+        if (readyState.finished) {
+          await finishMatch(activeWallet, matchId, readyState);
+          return;
+        }
+        setForfeitClaimable(true);
+        setToastMessage("Your rival has not moved for 30 minutes. You can claim the win.");
+        return;
+      }
+
+      setProcessing("resolving");
+      if (!readyState.roundResolved) {
+        try {
+          await resolveLiveRound(activeWallet, matchId);
+        } catch (error) {
+          const latestState = await readLiveMatch(activeWallet, matchId);
+          if (!latestState.roundResolved) throw error;
+        }
+      }
+
+      const resolvedState = await waitForLiveMatchState(activeWallet, matchId, (state) => state.roundResolved);
+      setProcessing("decrypting");
+      const decrypted = await decryptLiveRound(activeWallet, matchId, resolvedState.round);
+      const isPlayerOne = activeWallet.address.toLowerCase() === resolvedState.playerOne.toLowerCase();
+      const playerAction = isPlayerOne ? decrypted.playerAction : decrypted.opponentAction;
+      const opponentAction = isPlayerOne ? decrypted.opponentAction : decrypted.playerAction;
+      const pointsYou = isPlayerOne ? decrypted.pointsYou : decrypted.pointsOpponent;
+      const pointsOpponent = isPlayerOne ? decrypted.pointsOpponent : decrypted.pointsYou;
+      const winner = decrypted.outcome === 0
+        ? "draw"
+        : (decrypted.outcome === 1) === isPlayerOne ? "you" : "opponent";
+      const liveResult: RoundResult = {
+        playerAction: playerAction === 1 ? "steal" : playerAction === 2 ? "guard" : "scout",
+        opponentAction: opponentAction === 1 ? "steal" : opponentAction === 2 ? "guard" : "scout",
+        winner,
+        pointsYou,
+        pointsOpponent,
+        eventTitle: getHeistEvent(decrypted.eventCode).title,
+        eventDescription: getHeistEvent(decrypted.eventCode).description,
+      };
+      setRound(resolvedState.round);
+      setYourScore((score) => score + liveResult.pointsYou);
+      setOpponentScore((score) => score + liveResult.pointsOpponent);
+      setResult(liveResult);
+      setProcessing("resolved");
+      playSound(liveResult.winner === "you" ? "win" : liveResult.winner === "opponent" ? "lose" : "draw");
+      if (resolvedState.finished) await finishMatch(activeWallet, matchId, resolvedState);
+    } catch (error) {
+      notifyError(error, "Live round failed.", { label: "Keep going", run: () => void continueLiveRound(activeWallet, matchId) });
+    }
+  }
+
+  /** Reads the final encrypted score and decides the match result. A forfeit win beats the score. */
+  async function finishMatch(activeWallet: WalletSession, matchId: bigint, state: LiveMatchState) {
+    const me = activeWallet.address.toLowerCase();
+    const isPlayerOne = me === state.playerOne.toLowerCase();
+    const score = await decryptLiveScore(activeWallet, matchId);
+    const you = isPlayerOne ? score.scoreOne : score.scoreTwo;
+    const rival = isPlayerOne ? score.scoreTwo : score.scoreOne;
+    setYourScore(you);
+    setOpponentScore(rival);
+    setProcessing("resolved");
+    if (state.forfeitWinner) {
+      setMatchOutcome({ kind: state.forfeitWinner.toLowerCase() === me ? "forfeit-win" : "forfeit-loss", yourScore: you, opponentScore: rival });
+    } else {
+      setMatchOutcome({ kind: you > rival ? "win" : you < rival ? "loss" : "draw", yourScore: you, opponentScore: rival });
+    }
+  }
+
+  async function handleClaimForfeit() {
+    if (!wallet || liveMatchId === null) return;
+    setRecoveryAction(null);
+    setConnectionBusy(true);
+    try {
+      setToastMessage("Claiming the win on Sepolia…");
+      await claimLiveForfeit(wallet, liveMatchId);
+      const state = await readLiveMatch(wallet, liveMatchId);
+      setForfeitClaimable(false);
+      await finishMatch(wallet, liveMatchId, state);
+      playSound("win");
+    } catch (error) {
+      notifyError(error, "Could not claim the forfeit.", { label: "Retry", run: () => void handleClaimForfeit() });
+    } finally {
+      setConnectionBusy(false);
+    }
+  }
+
+  async function handleCancelVault() {
+    if (!wallet || liveMatchId === null) return;
+    setRecoveryAction(null);
+    setConnectionBusy(true);
+    try {
+      await cancelLiveMatch(wallet, liveMatchId);
+      handleBackToLobby();
+      setToastMessage("Vault cancelled. No one can join it now.");
+    } catch (error) {
+      notifyError(error, "Could not cancel the vault.", { label: "Retry", run: () => void handleCancelVault() });
+    } finally {
+      setConnectionBusy(false);
+    }
   }
 
   async function handleSubmitAction(actionOverride?: Action) {
@@ -364,53 +500,12 @@ function App() {
       try {
         playSound("seal");
         await submitLiveAction(wallet, liveMatchId, actionToSubmit, setProcessing);
-        setProcessing("waiting");
-        const readyState = await waitForLiveMatchState(
-          wallet,
-          liveMatchId,
-          (state) => state.playerOneSubmitted && state.playerTwoSubmitted,
-        );
-
-        setProcessing("resolving");
-        if (!readyState.roundResolved) {
-          try {
-            await resolveLiveRound(wallet, liveMatchId);
-          } catch (error) {
-            const latestState = await readLiveMatch(wallet, liveMatchId);
-            if (!latestState.roundResolved) throw error;
-          }
-        }
-
-        const resolvedState = await waitForLiveMatchState(wallet, liveMatchId, (state) => state.roundResolved);
-        setProcessing("decrypting");
-        const decrypted = await decryptLiveRound(wallet, liveMatchId, resolvedState.round);
-        const isPlayerOne = wallet.address.toLowerCase() === resolvedState.playerOne.toLowerCase();
-        const playerAction = isPlayerOne ? decrypted.playerAction : decrypted.opponentAction;
-        const opponentAction = isPlayerOne ? decrypted.opponentAction : decrypted.playerAction;
-        const pointsYou = isPlayerOne ? decrypted.pointsYou : decrypted.pointsOpponent;
-        const pointsOpponent = isPlayerOne ? decrypted.pointsOpponent : decrypted.pointsYou;
-        const winner = decrypted.outcome === 0
-          ? "draw"
-          : (decrypted.outcome === 1) === isPlayerOne ? "you" : "opponent";
-        const liveResult: RoundResult = {
-          playerAction: playerAction === 1 ? "steal" : playerAction === 2 ? "guard" : "scout",
-          opponentAction: opponentAction === 1 ? "steal" : opponentAction === 2 ? "guard" : "scout",
-          winner,
-          pointsYou,
-          pointsOpponent,
-          eventTitle: getHeistEvent(decrypted.eventCode).title,
-          eventDescription: getHeistEvent(decrypted.eventCode).description,
-        };
-        setRound(resolvedState.round);
-        setYourScore((score) => score + liveResult.pointsYou);
-        setOpponentScore((score) => score + liveResult.pointsOpponent);
-        setResult(liveResult);
-        setProcessing("resolved");
-        playSound(liveResult.winner === "you" ? "win" : liveResult.winner === "opponent" ? "lose" : "draw");
       } catch (error) {
         setProcessing("idle");
         notifyError(error, "Live round failed.", { label: "Retry move", run: () => void handleSubmitAction(actionToSubmit) });
+        return;
       }
+      await continueLiveRound(wallet, liveMatchId);
       return;
     }
 
@@ -429,14 +524,23 @@ function App() {
       window.setTimeout(() => {
         setProcessing("resolved");
         setResult(nextResult);
-        setYourScore((score) => score + nextResult.pointsYou);
-        setOpponentScore((score) => score + nextResult.pointsOpponent);
+        const nextYou = yourScoreRef.current + nextResult.pointsYou;
+        const nextRival = opponentScoreRef.current + nextResult.pointsOpponent;
+        setYourScore(nextYou);
+        setOpponentScore(nextRival);
+        if (round >= 3) {
+          setMatchOutcome({ kind: nextYou > nextRival ? "win" : nextYou < nextRival ? "loss" : "draw", yourScore: nextYou, opponentScore: nextRival });
+        }
         playSound(nextResult.winner === "you" ? "win" : nextResult.winner === "opponent" ? "lose" : "draw");
       }, 3250),
     ];
   }
 
   async function handleNextRound() {
+    if (matchOutcome) {
+      setToastMessage("The match is over. Choose rematch to open another vault.");
+      return;
+    }
     if (liveMode) {
       if (!wallet || liveMatchId === null) return;
       try {
@@ -479,9 +583,7 @@ function App() {
         const rematch = await rematchLiveMatch(wallet, liveMatchId);
         setLiveMatchId(rematch.matchId);
         setMatchCode(rematch.matchId.toString());
-        setRound(1);
-        setYourScore(0);
-        setOpponentScore(0);
+        resetMatchProgress();
         setResult(null);
         setProcessing("idle");
         setOpponentJoined(true);
@@ -495,9 +597,7 @@ function App() {
       return;
     }
     clearRoundTimers();
-    setRound(1);
-    setYourScore(0);
-    setOpponentScore(0);
+    resetMatchProgress();
     setSelectedAction(null);
     setProcessing("idle");
     setResult(null);
@@ -558,6 +658,7 @@ function App() {
             onRefresh={() => void refreshLiveMatch()}
             onEnter={handleEnterGame}
             onCopyInvite={() => void handleCopyInvite()}
+            onCancel={() => void handleCancelVault()}
           />
         )}
         {view === "game" && (
@@ -572,6 +673,9 @@ function App() {
             selectedAction={selectedAction}
             processing={processing}
             result={result}
+            matchOutcome={matchOutcome}
+            forfeitClaimable={forfeitClaimable}
+            onClaimForfeit={() => void handleClaimForfeit()}
             onSelectAction={setSelectedAction}
             onSubmit={handleSubmitAction}
             onNextRound={handleNextRound}

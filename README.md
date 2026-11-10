@@ -10,7 +10,7 @@ On a public blockchain, an opponent could watch a move before choosing a counter
 
 ## Hackathon features
 
-- Sepolia wallet support through injected wallets and WalletConnect.
+- Sepolia wallet support through WalletConnect, with automatic add and switch to Sepolia.
 - Client-side Zama FHEVM encryption with encrypted input proofs.
 - Best-of-three matches using encrypted move evaluation and scores.
 - Public result reveal only after round resolution, with cinematic staged feedback.
@@ -38,7 +38,7 @@ VITE_SHADOW_HEIST_ADDRESS=0xcd8E285b61437EE0AfDdbD5EBA54c1A3ea6FBFb6
 VITE_WALLETCONNECT_PROJECT_ID=your_public_project_id
 ```
 
-Connect a wallet on Sepolia, create or join a numeric match, then submit encrypted moves from two wallets. Both wallets need Sepolia ETH for gas.
+Connect with WalletConnect (the app adds and switches to Sepolia for you), create or join a numeric match, then submit encrypted moves from two wallets. Both wallets need Sepolia ETH for gas.
 
 ## Privacy model
 
@@ -46,6 +46,8 @@ Connect a wallet on Sepolia, create or join a numeric match, then submit encrypt
 - The contract accepts encrypted `euint8` inputs and validates their associated proof.
 - FHEVM computes the matchup and points without exposing the plaintext moves during the round.
 - Round results are intentionally made publicly decryptable after resolution so both players can verify the outcome.
+- Moves outside Steal, Guard and Scout are treated as Scout inside the contract, so a hand-crafted transaction cannot create a move that never loses.
+- If a player stops moving for 30 minutes, the other player can claim the match. The forfeit winner wins whatever the score says.
 
 Transaction hashes, wallet addresses, match metadata, and timing remain public on Sepolia. FHE protects the strategic move data, not the surrounding blockchain metadata.
 
@@ -81,3 +83,12 @@ pnpm contracts:test
 React, TypeScript, Vite, ethers v6, WalletConnect, Zama FHEVM SDK, Solidity, and Hardhat.
 
 Built for the **Zama Developer Program — Mainnet Season 5: Confidential Gaming**.
+
+
+## Tests
+
+```bash
+pnpm contracts:test
+```
+
+Runs the FHEVM mock tests: all nine move pairings, event bonuses, privacy of unresolved moves, out-of-range moves, best-of-three scoring, forfeits and abandoned matches.

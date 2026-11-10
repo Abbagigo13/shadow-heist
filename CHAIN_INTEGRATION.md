@@ -4,9 +4,9 @@ The project now contains the first real FHEVM integration layer. The contract is
 
 ## What is live in this checkpoint
 
-The frontend wallet button connects to an injected Sepolia wallet and rejects other networks. The contract compiles against the current Zama FHEVM Solidity library. The browser adapter uses the current `@zama-fhe/sdk` package to encrypt `euint8` actions and publicly decrypt the result handles. The live transaction adapter has functions for creating a match, joining, submitting an encrypted action, resolving a round, reading match state, and decrypting the round result.
+The frontend wallet button connects through WalletConnect and asks the wallet to add and switch to Sepolia when it is on another network. The contract compiles against the current Zama FHEVM Solidity library. The browser adapter uses the current `@zama-fhe/sdk` package to encrypt `euint8` actions and publicly decrypt the result handles. The live transaction adapter has functions for creating a match, joining, submitting an encrypted action, resolving a round, reading match state, and decrypting the round result.
 
-The wallet button now opens a two-option chooser: injected browser wallets such as MetaMask/Rabby, or WalletConnect QR for mobile wallets. Set the public WalletConnect Cloud project ID in `VITE_WALLETCONNECT_PROJECT_ID`; without it, the injected-wallet path still works and the QR path shows a clear setup error. The implementation uses the [official Reown Ethereum provider](https://docs.reown.com/advanced/providers/ethereum) and lazy-loads the QR bundle only when selected.
+Set the public WalletConnect Cloud project ID in `VITE_WALLETCONNECT_PROJECT_ID`; without it the connect button shows a clear setup error. The implementation uses the [official Reown Ethereum provider](https://docs.reown.com/advanced/providers/ethereum) and lazy-loads the QR bundle only when needed.
 
 The visible game screens still default to local mock mode. That is intentional until a deployed address is provided and the two-wallet flow is wired into the screens. This keeps the demo usable without requiring a wallet while the chain path is validated independently.
 

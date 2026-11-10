@@ -3,6 +3,8 @@ import type { EIP1193Provider as ViemEip1193Provider } from "viem";
 import { WalletError } from "./errors";
 
 export const SEPOLIA_CHAIN_ID = 11155111;
+/** Mirrors ShadowHeistV2.ACTION_TIMEOUT (30 minutes). */
+export const ACTION_TIMEOUT_SECONDS = 30 * 60;
 export const SHADOW_HEIST_ADDRESS = (import.meta.env.VITE_SHADOW_HEIST_ADDRESS ?? "") as string;
 export const WALLETCONNECT_PROJECT_ID = (import.meta.env.VITE_WALLETCONNECT_PROJECT_ID ?? "") as string;
 
@@ -15,6 +17,9 @@ export const shadowHeistAbi = [
   "function rematch(uint256 previousMatchId) returns (uint256 matchId)",
   "function forfeitTimeout(uint256 matchId)",
   "function registerProfile()",
+  "function cancelMatch(uint256 matchId)",
+  "function abandonStaleMatch(uint256 matchId)",
+  "function forfeitWinner(uint256 matchId) view returns (address)",
   "function getMatch(uint256 matchId) view returns (address playerOne, address playerTwo, uint8 mode, uint8 maxRounds, uint8 round, uint256 challengeId, uint64 createdAt, uint64 lastActionAt, bool playerOneSubmitted, bool playerTwoSubmitted, bool roundResolved, bool finished, bool cancelled)",
   "function getEncryptedRoundResult(uint256 matchId, uint8 round) view returns (bytes32 actionOne, bytes32 actionTwo, bytes32 outcome, bytes32 pointsOne, bytes32 pointsTwo, bytes32 eventCode, bool resolved)",
   "function getEncryptedScore(uint256 matchId) view returns (bytes32 scoreOne, bytes32 scoreTwo)",
@@ -26,6 +31,8 @@ export const shadowHeistAbi = [
   "event NextRoundStarted(uint256 indexed matchId, uint8 indexed round)",
   "event MatchFinished(uint256 indexed matchId, uint8 indexed roundsPlayed)",
   "event RematchCreated(uint256 indexed previousMatchId, uint256 indexed matchId)",
+  "event MatchCancelled(uint256 indexed matchId)",
+  "event MatchTimedOut(uint256 indexed matchId, uint8 indexed round, address indexed winner)",
 ] as const;
 
 export type WalletSession = {

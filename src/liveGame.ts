@@ -1,6 +1,7 @@
 import type { ContractTransactionReceipt } from "ethers";
 import { encryptAction, publiclyDecrypt } from "./fhevm";
 import {
+  ACTION_TIMEOUT_SECONDS,
   getShadowHeistContract,
   SHADOW_HEIST_ADDRESS,
   type WalletSession,
@@ -20,6 +21,9 @@ export type LiveMatchState = {
   roundResolved: boolean;
   finished: boolean;
   cancelled: boolean;
+  lastActionAt: number;
+  /** Set when the match ended by timeout. The forfeit winner wins regardless of score. */
+  forfeitWinner: string | null;
 };
 
 export type LiveRoundResult = {
@@ -30,6 +34,8 @@ export type LiveRoundResult = {
   pointsOpponent: number;
   eventCode: number;
 };
+
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 function requireAddress() {
   if (!SHADOW_HEIST_ADDRESS) {
@@ -124,6 +130,7 @@ export async function rematchLiveMatch(wallet: WalletSession, matchId: bigint) {
 export async function readLiveMatch(wallet: WalletSession, matchId: bigint): Promise<LiveMatchState> {
   const contract = getShadowHeistContract(wallet.provider);
   const state = await contract.getMatch(matchId);
+  const forfeitWinner = state.finished ? (await contract.forfeitWinner(matchId)) as string : ZERO_ADDRESS;
   return {
     playerOne: state.playerOne,
     playerTwo: state.playerTwo,
@@ -137,7 +144,44 @@ export async function readLiveMatch(wallet: WalletSession, matchId: bigint): Pro
     roundResolved: state.roundResolved,
     finished: state.finished,
     cancelled: state.cancelled,
+    lastActionAt: Number(state.lastActionAt),
+    forfeitWinner: forfeitWinner === ZERO_ADDRESS ? null : forfeitWinner,
   };
+}
+
+/** True when exactly one player moved and the other has been silent past the on-chain timeout. */
+export function canClaimForfeit(state: LiveMatchState, nowSeconds = Math.floor(Date.now() / 1000)) {
+  return (
+    !state.finished &&
+    !state.cancelled &&
+    !state.roundResolved &&
+    state.playerOneSubmitted !== state.playerTwoSubmitted &&
+    nowSeconds > state.lastActionAt + ACTION_TIMEOUT_SECONDS
+  );
+}
+
+export async function claimLiveForfeit(wallet: WalletSession, matchId: bigint) {
+  const contract = getShadowHeistContract(wallet.signer);
+  const transaction = await contract.forfeitTimeout(matchId);
+  const receipt = await transaction.wait();
+  return { txHash: transactionHash(receipt) };
+}
+
+export async function cancelLiveMatch(wallet: WalletSession, matchId: bigint) {
+  const contract = getShadowHeistContract(wallet.signer);
+  const transaction = await contract.cancelMatch(matchId);
+  const receipt = await transaction.wait();
+  return { txHash: transactionHash(receipt) };
+}
+
+/** Reads the final encrypted score, which the contract makes publicly decryptable after each round. */
+export async function decryptLiveScore(wallet: WalletSession, matchId: bigint) {
+  const contract = getShadowHeistContract(wallet.provider);
+  const score = await contract.getEncryptedScore(matchId);
+  const handles = [score.scoreOne, score.scoreTwo] as string[];
+  const decrypted = await publiclyDecrypt(handles, wallet.eip1193Provider);
+  const clear = handles.map((handle) => Number(decrypted.clearValues[handle as `0x${string}`]));
+  return { scoreOne: clear[0] ?? 0, scoreTwo: clear[1] ?? 0 };
 }
 
 export async function decryptLiveRound(wallet: WalletSession, matchId: bigint, round: number): Promise<LiveRoundResult> {

@@ -19,5 +19,6 @@
 - [x] Add shareable match invites with a browser/mobile Share action, clipboard fallback, and automatic `/?match=...` join-drawer prefill for demo codes and live numeric match IDs.
 - [x] Add friendly wallet and transaction error recovery for rejected signatures, wrong network, WalletConnect configuration, gas balance, invalid/full vaults, timeouts, reverted transactions, and live-round retry actions.
 - [x] Add the ShadowHeistV2 contract foundation beside the deployed V1 contract, covering single-round and best-of-three modes, multi-round encrypted results and scores, rematches, cancellation, timeouts, profiles/directory registration, daily challenge configuration, and frontend/indexer-friendly lifecycle events.
-- [ ] Complete encrypted local and two-wallet Sepolia validation for ShadowHeistV2.
+- [x] Encrypted local validation for ShadowHeistV2 (28 mock tests passing).
+- [ ] Two-wallet Sepolia validation of the redeployed ShadowHeistV2; record the transaction links in the README.
 - [x] Deploy ShadowHeistV2 once on Sepolia at `0xcd8E285b61437EE0AfDdbD5EBA54c1A3ea6FBFb6` and migrate the frontend adapter to the V2 multi-round ABI in one cutover.

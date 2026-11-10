@@ -63,6 +63,8 @@ contract ShadowHeistV2 is ZamaEthereumConfig {
 
     uint256 public nextMatchId;
     address public immutable admin;
+    /// @notice Set when a match ended by timeout. The forfeit winner wins the match regardless of score.
+    mapping(uint256 => address) public forfeitWinner;
     mapping(uint256 => Match) private matches;
     mapping(uint256 => mapping(uint8 => RoundResult)) private rounds;
     mapping(uint256 => DailyChallenge) private dailyChallenges;
@@ -132,7 +134,11 @@ contract ShadowHeistV2 is ZamaEthereumConfig {
         require(!game.roundResolved, "round already resolved");
         require(_isValidPlayer(game, msg.sender), "player already submitted");
 
-        euint8 action = FHE.fromExternal(encryptedAction, inputProof);
+        euint8 rawAction = FHE.fromExternal(encryptedAction, inputProof);
+        // A client can encrypt any value. Anything outside 1..3 is treated as SCOUT, so a
+        // malformed move can never become a "move that cannot lose".
+        ebool validAction = FHE.and(FHE.ge(rawAction, STEAL), FHE.le(rawAction, SCOUT));
+        euint8 action = FHE.select(validAction, rawAction, FHE.asEuint8(SCOUT));
         FHE.allowThis(action);
         FHE.allow(action, msg.sender);
 
@@ -241,11 +247,13 @@ contract ShadowHeistV2 is ZamaEthereumConfig {
             current.outcome = one;
             current.pointsOne = one;
             current.pointsTwo = zero;
+            forfeitWinner[matchId] = game.playerOne;
             emit MatchTimedOut(matchId, game.round, game.playerOne);
         } else {
             current.outcome = two;
             current.pointsOne = zero;
             current.pointsTwo = one;
+            forfeitWinner[matchId] = game.playerTwo;
             emit MatchTimedOut(matchId, game.round, game.playerTwo);
         }
         current.eventCode = zero;
@@ -264,6 +272,18 @@ contract ShadowHeistV2 is ZamaEthereumConfig {
         FHE.makePubliclyDecryptable(game.encryptedScoreTwo);
         emit RoundResolved(matchId, game.round, EVENT_COUNT);
         emit MatchFinished(matchId, game.round);
+    }
+
+    /// @notice Closes a seated match where neither player moved for ACTION_TIMEOUT.
+    function abandonStaleMatch(uint256 matchId) external {
+        Match storage game = matches[matchId];
+        require(_isPlayer(game, msg.sender), "not a player");
+        require(game.playerTwo != address(0), "waiting for player two");
+        require(!game.finished && !game.cancelled && !game.roundResolved, "round is closed");
+        require(!game.playerOneSubmitted && !game.playerTwoSubmitted, "a player already moved");
+        require(block.timestamp > game.lastActionAt + ACTION_TIMEOUT, "timeout not reached");
+        game.cancelled = true;
+        emit MatchCancelled(matchId);
     }
 
     function registerProfile() external {
@@ -366,13 +386,14 @@ contract ShadowHeistV2 is ZamaEthereumConfig {
 
     function _touchProfile(address player, bool explicitRegistration) internal {
         PublicProfile storage profile = profiles[player];
-        if (!profile.registered) {
+        bool alreadyRegistered = profile.registered;
+        if (!alreadyRegistered) {
             profile.registered = true;
             playerDirectory.push(player);
             emit ProfileRegistered(player);
         }
         profile.lastSeenAt = uint64(block.timestamp);
-        if (explicitRegistration) emit ProfileRegistered(player);
+        if (explicitRegistration && alreadyRegistered) emit ProfileRegistered(player);
     }
 
     function _isPlayer(Match storage game, address player) internal view returns (bool) {
