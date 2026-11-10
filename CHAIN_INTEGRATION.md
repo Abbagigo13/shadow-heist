@@ -80,3 +80,11 @@ Then start the frontend with `pnpm dev`. The wallet must be connected to Sepolia
 ## Next integration slice
 
 Wire `createLiveMatch`, `joinLiveMatch`, `submitLiveAction`, `resolveLiveRound`, `readLiveMatch`, and `decryptLiveRound` into the existing React state machine. Add a numeric match-id route or encode the deployed match ID in the share link, then validate a full two-wallet round on Sepolia before polishing the pitch demo.
+
+
+## Sealed moves, invites and stakes
+
+- `submitAction` clamps any move outside 1..3 to Scout. `resolveRound` publishes only the outcome, points and event; moves are never publicly decryptable. The browser remembers the player’s own move (session storage) and infers the rival’s from the outcome.
+- `createMatchWith(mode, maxRounds, challengeId, invited, stake)` creates an invite-only and/or staked vault. The caller must first make the contract an operator on the stake token (the app does this).
+- `settle(matchId)` pays a staked match once it is finished or cancelled. Anyone can call it, once.
+- The constructor takes the stake token address. `deploy/02_deploy_shadow_heist_v2.ts` defaults to Confidential USDT (Mock) on Sepolia.

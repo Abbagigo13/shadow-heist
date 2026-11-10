@@ -13,6 +13,8 @@ export type ProcessingState =
 export type Outcome = "you" | "opponent" | "draw";
 
 export type RoundResult = {
+  /** False when this device never saw the player's own move, so both moves stay sealed on screen. */
+  movesKnown?: boolean;
   playerAction: Action;
   opponentAction: Action;
   winner: Outcome;
@@ -138,4 +140,16 @@ export function processingLabel(state: ProcessingState): string {
     default:
       return "Ready when you are";
   }
+}
+
+const beats: Record<Action, Action> = { steal: "scout", guard: "steal", scout: "guard" };
+
+/**
+ * The contract never publishes moves, only who won. In this game the winner plus your own move
+ * leaves exactly one possible rival move, so the screen can still show it.
+ */
+export function inferRivalMove(mine: Action, winner: Outcome): Action {
+  if (winner === "draw") return mine;
+  if (winner === "you") return beats[mine];
+  return (Object.keys(beats) as Action[]).find((action) => beats[action] === mine) ?? mine;
 }

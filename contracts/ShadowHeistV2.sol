@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.27;
 
-import {FHE, ebool, euint8, externalEuint8} from "@fhevm/solidity/lib/FHE.sol";
+import {FHE, ebool, euint8, euint64, externalEuint8} from "@fhevm/solidity/lib/FHE.sol";
 import {ZamaEthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
+import {IConfidentialToken} from "./IConfidentialToken.sol";
 
 /// @title Shadow Heist V2
 /// @notice Extensible two-player confidential strategy matches for FHEVM.
@@ -61,8 +62,21 @@ contract ShadowHeistV2 is ZamaEthereumConfig {
         bool registered;
     }
 
+    struct StakeInfo {
+        euint64 inOne;
+        euint64 inTwo;
+        bool settled;
+    }
+
     uint256 public nextMatchId;
     address public immutable admin;
+    /// @notice ERC-7984 token used for stakes. address(0) turns stakes off.
+    IConfidentialToken public immutable stakeToken;
+    /// @notice Stake per player, in token base units. 0 means a free match.
+    mapping(uint256 => uint64) public matchStake;
+    /// @notice When set, only this wallet may take the second seat.
+    mapping(uint256 => address) public invitedRival;
+    mapping(uint256 => StakeInfo) private stakes;
     /// @notice Set when a match ended by timeout. The forfeit winner wins the match regardless of score.
     mapping(uint256 => address) public forfeitWinner;
     mapping(uint256 => Match) private matches;
@@ -83,18 +97,21 @@ contract ShadowHeistV2 is ZamaEthereumConfig {
     event RematchCreated(uint256 indexed previousMatchId, uint256 indexed matchId);
     event ProfileRegistered(address indexed player);
     event DailyChallengeUpdated(uint256 indexed day, uint8 eventCode, bool active);
+    event StakePlaced(uint256 indexed matchId, address indexed player, uint64 stake);
+    event StakeSettled(uint256 indexed matchId);
 
     modifier onlyAdmin() {
         require(msg.sender == admin, "admin only");
         _;
     }
 
-    constructor() {
+    constructor(address stakeToken_) {
         admin = msg.sender;
+        stakeToken = IConfidentialToken(stakeToken_);
     }
 
     function createMatch() external returns (uint256 matchId) {
-        return _createMatch(msg.sender, address(0), MODE_SINGLE, 1, 0);
+        return _createMatch(msg.sender, address(0), MODE_SINGLE, 1, 0, address(0), 0);
     }
 
     function createMatch(uint8 mode, uint8 maxRounds, uint256 challengeId) external returns (uint256 matchId) {
@@ -102,7 +119,24 @@ contract ShadowHeistV2 is ZamaEthereumConfig {
         require(maxRounds == 1 || maxRounds == 3 || maxRounds == 5 || maxRounds == 7 || maxRounds == 9, "invalid round count");
         if (mode == MODE_SINGLE) require(maxRounds == 1, "single match has one round");
         if (mode == MODE_BEST_OF_THREE) require(maxRounds == 3, "best of three has three rounds");
-        return _createMatch(msg.sender, address(0), mode, maxRounds, challengeId);
+        return _createMatch(msg.sender, address(0), mode, maxRounds, challengeId, address(0), 0);
+    }
+
+    /// @notice Creates a match with an optional invited rival and an optional per-player stake.
+    /// @dev The caller must first make this contract an operator on the stake token.
+    function createMatchWith(
+        uint8 mode,
+        uint8 maxRounds,
+        uint256 challengeId,
+        address invited,
+        uint64 stake
+    ) external returns (uint256 matchId) {
+        require(mode == MODE_SINGLE || mode == MODE_BEST_OF_THREE, "unsupported mode");
+        require(maxRounds == 1 || maxRounds == 3 || maxRounds == 5 || maxRounds == 7 || maxRounds == 9, "invalid round count");
+        if (mode == MODE_SINGLE) require(maxRounds == 1, "single match has one round");
+        if (mode == MODE_BEST_OF_THREE) require(maxRounds == 3, "best of three has three rounds");
+        require(invited != msg.sender, "cannot invite yourself");
+        return _createMatch(msg.sender, address(0), mode, maxRounds, challengeId, invited, stake);
     }
 
     function rematch(uint256 previousMatchId) external returns (uint256 matchId) {
@@ -110,7 +144,14 @@ contract ShadowHeistV2 is ZamaEthereumConfig {
         require(previous.playerOne != address(0), "match does not exist");
         require(previous.finished, "match not finished");
         require(msg.sender == previous.playerOne || msg.sender == previous.playerTwo, "not a player");
-        matchId = _createMatch(previous.playerOne, previous.playerTwo, previous.mode, previous.maxRounds, previous.challengeId);
+        uint64 stake = matchStake[previousMatchId];
+        if (stake > 0) {
+            // A stake can only be pulled from the wallet that is calling, so the rival re-joins and pays for themselves.
+            address rival = msg.sender == previous.playerOne ? previous.playerTwo : previous.playerOne;
+            matchId = _createMatch(msg.sender, address(0), previous.mode, previous.maxRounds, previous.challengeId, rival, stake);
+        } else {
+            matchId = _createMatch(previous.playerOne, previous.playerTwo, previous.mode, previous.maxRounds, previous.challengeId, address(0), 0);
+        }
         emit RematchCreated(previousMatchId, matchId);
     }
 
@@ -120,9 +161,12 @@ contract ShadowHeistV2 is ZamaEthereumConfig {
         require(game.playerTwo == address(0), "match is full");
         require(msg.sender != game.playerOne, "host cannot join twice");
         require(!game.cancelled && !game.finished, "match is closed");
+        address invited = invitedRival[matchId];
+        require(invited == address(0) || invited == msg.sender, "invite only");
         game.playerTwo = msg.sender;
         game.lastActionAt = uint64(block.timestamp);
         _touchProfile(msg.sender, false);
+        if (matchStake[matchId] > 0) stakes[matchId].inTwo = _pullStake(matchId, msg.sender);
         emit PlayerJoined(matchId, msg.sender);
     }
 
@@ -192,8 +236,9 @@ contract ShadowHeistV2 is ZamaEthereumConfig {
         game.roundResolved = true;
         game.lastActionAt = uint64(block.timestamp);
 
-        _allowAndReveal(current.actionOne);
-        _allowAndReveal(current.actionTwo);
+        // Moves stay sealed for good: only the outcome, points and event are published.
+        FHE.allowThis(current.actionOne);
+        FHE.allowThis(current.actionTwo);
         _allowAndReveal(current.outcome);
         _allowAndReveal(current.pointsOne);
         _allowAndReveal(current.pointsTwo);
@@ -274,6 +319,54 @@ contract ShadowHeistV2 is ZamaEthereumConfig {
         emit MatchFinished(matchId, game.round);
     }
 
+    /// @notice Pays out a staked match once it has ended. Anyone can call it, once.
+    /// @dev Each side is only ever at risk for the smaller of the two stakes that actually arrived,
+    /// so a wallet that could not fund its stake cannot win the other player's money.
+    function settle(uint256 matchId) external {
+        Match storage game = matches[matchId];
+        StakeInfo storage info = stakes[matchId];
+        require(matchStake[matchId] > 0, "no stake");
+        require(game.finished || game.cancelled, "match still open");
+        require(!info.settled, "already settled");
+        info.settled = true;
+
+        if (game.cancelled) {
+            _pay(game.playerOne, info.inOne);
+            if (game.playerTwo != address(0)) _pay(game.playerTwo, info.inTwo);
+            emit StakeSettled(matchId);
+            return;
+        }
+
+        euint64 matched = FHE.min(info.inOne, info.inTwo);
+        euint64 extraOne = FHE.sub(info.inOne, matched);
+        euint64 extraTwo = FHE.sub(info.inTwo, matched);
+        euint64 pot = FHE.add(matched, matched);
+        euint64 payOne;
+        euint64 payTwo;
+
+        address winner = forfeitWinner[matchId];
+        if (winner != address(0)) {
+            payOne = winner == game.playerOne ? FHE.add(extraOne, pot) : extraOne;
+            payTwo = winner == game.playerTwo ? FHE.add(extraTwo, pot) : extraTwo;
+        } else {
+            ebool oneAhead = FHE.gt(game.encryptedScoreOne, game.encryptedScoreTwo);
+            ebool twoAhead = FHE.gt(game.encryptedScoreTwo, game.encryptedScoreOne);
+            euint64 zero = FHE.asEuint64(0);
+            euint64 prizeOne = FHE.select(oneAhead, pot, FHE.select(twoAhead, zero, matched));
+            euint64 prizeTwo = FHE.select(twoAhead, pot, FHE.select(oneAhead, zero, matched));
+            payOne = FHE.add(extraOne, prizeOne);
+            payTwo = FHE.add(extraTwo, prizeTwo);
+        }
+
+        _pay(game.playerOne, payOne);
+        _pay(game.playerTwo, payTwo);
+        emit StakeSettled(matchId);
+    }
+
+    function getStakeInfo(uint256 matchId) external view returns (uint64 stake, address invited, bool settled) {
+        return (matchStake[matchId], invitedRival[matchId], stakes[matchId].settled);
+    }
+
     /// @notice Closes a seated match where neither player moved for ACTION_TIMEOUT.
     function abandonStaleMatch(uint256 matchId) external {
         Match storage game = matches[matchId];
@@ -350,8 +443,22 @@ contract ShadowHeistV2 is ZamaEthereumConfig {
         return (challenge.eventCode, challenge.active);
     }
 
-    function _createMatch(address playerOne, address playerTwo, uint8 mode, uint8 maxRounds, uint256 challengeId) internal returns (uint256 matchId) {
+    function _createMatch(
+        address playerOne,
+        address playerTwo,
+        uint8 mode,
+        uint8 maxRounds,
+        uint256 challengeId,
+        address invited,
+        uint64 stake
+    ) internal returns (uint256 matchId) {
         matchId = nextMatchId++;
+        if (invited != address(0)) invitedRival[matchId] = invited;
+        if (stake > 0) {
+            require(address(stakeToken) != address(0), "stakes are not enabled");
+            require(playerTwo == address(0), "staked matches seat the rival by joining");
+            matchStake[matchId] = stake;
+        }
         Match storage game = matches[matchId];
         game.playerOne = playerOne;
         game.playerTwo = playerTwo;
@@ -367,8 +474,25 @@ contract ShadowHeistV2 is ZamaEthereumConfig {
         FHE.allowThis(game.encryptedScoreTwo);
         _touchProfile(playerOne, false);
         if (playerTwo != address(0)) _touchProfile(playerTwo, false);
+        if (stake > 0) stakes[matchId].inOne = _pullStake(matchId, playerOne);
         emit MatchCreated(matchId, playerOne, mode, maxRounds, challengeId);
         if (playerTwo != address(0)) emit PlayerJoined(matchId, playerTwo);
+    }
+
+    /// @dev Pulls one player's stake. The token moves 0 if the wallet is short, and we record what really arrived.
+    function _pullStake(uint256 matchId, address player) internal returns (euint64 received) {
+        uint64 stake = matchStake[matchId];
+        euint64 amount = FHE.asEuint64(stake);
+        FHE.allowTransient(amount, address(stakeToken));
+        received = stakeToken.confidentialTransferFrom(player, address(this), amount);
+        FHE.allowThis(received);
+        emit StakePlaced(matchId, player, stake);
+    }
+
+    function _pay(address to, euint64 amount) internal {
+        FHE.allowTransient(amount, address(stakeToken));
+        FHE.allow(amount, to);
+        stakeToken.confidentialTransfer(to, amount);
     }
 
     function _eventCode(uint256 challengeId) internal returns (euint8) {

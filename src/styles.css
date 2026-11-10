@@ -204,3 +204,88 @@ h1 em { color: var(--acid); font-style: normal; }
 .match-final {
   margin-top: 18px;
 }
+
+.vault-options {
+  display: grid;
+  gap: 8px;
+  margin: 18px 0 4px;
+}
+
+.vault-options label {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  opacity: 0.8;
+}
+
+.vault-options label span {
+  opacity: 0.6;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.vault-options input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+}
+
+.stake-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.stake-chip {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.stake-chip.is-selected {
+  border-color: rgba(120, 255, 190, 0.7);
+  background: rgba(120, 255, 190, 0.1);
+}
+
+.stake-chip:focus-visible {
+  outline: 2px solid rgba(120, 255, 190, 0.8);
+  outline-offset: 2px;
+}
+
+.vault-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.vault-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 12px;
+}
+
+.payout-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+  font-size: 13px;
+}
+
+.payout-row > span {
+  flex: 1;
+}

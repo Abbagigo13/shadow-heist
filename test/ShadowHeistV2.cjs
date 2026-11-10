@@ -9,10 +9,33 @@ const TIMEOUT = 30 * 60;
 
 describe("ShadowHeistV2", function () {
   async function deploy() {
+    const Token = await hre.ethers.getContractFactory("MockConfidentialToken");
+    const token = await Token.deploy();
+    await token.waitForDeployment();
     const ShadowHeistV2 = await hre.ethers.getContractFactory("ShadowHeistV2");
-    const game = await ShadowHeistV2.deploy();
+    const game = await ShadowHeistV2.deploy(await token.getAddress());
     await game.waitForDeployment();
+    game.mockToken = token;
     return game;
+  }
+
+  async function fund(game, player, amount) {
+    const token = game.mockToken;
+    await token.mint(player.address, amount);
+    await token.connect(player).setOperator(await game.getAddress(), 2n ** 40n);
+  }
+
+  async function balanceOf(game, player) {
+    const token = game.mockToken;
+    const handle = await token.confidentialBalanceOf(player.address);
+    return hre.fhevm.userDecryptEuint(FhevmType.euint64, handle, await token.getAddress(), player);
+  }
+
+  async function stakedMatch(game, host, challenger, stake, invited = hre.ethers.ZeroAddress) {
+    await game.connect(host).createMatchWith(1, 1, 0, invited, stake);
+    const matchId = (await game.nextMatchId()) - 1n;
+    await game.connect(challenger).joinMatch(matchId);
+    return matchId;
   }
 
   async function seatedMatch(game, host, challenger, mode = 1, rounds = 1, challengeId = 0n) {
@@ -36,12 +59,15 @@ describe("ShadowHeistV2", function () {
     await game.connect(one).resolveRound(matchId);
   }
 
-  async function readRound(game, matchId, round) {
+  // Moves are never public. Pass the two players to read their own sealed moves.
+  async function readRound(game, matchId, round, players) {
     const result = await game.getEncryptedRoundResult(matchId, round);
     const open = (handle) => hre.fhevm.publicDecryptEuint(FhevmType.euint8, handle);
+    const address = await game.getAddress();
+    const own = async (handle, player) => Number(await hre.fhevm.userDecryptEuint(FhevmType.euint8, handle, address, player));
     return {
-      actionOne: Number(await open(result.actionOne)),
-      actionTwo: Number(await open(result.actionTwo)),
+      actionOne: players ? await own(result.actionOne, players[0]) : undefined,
+      actionTwo: players ? await own(result.actionTwo, players[1]) : undefined,
       outcome: Number(await open(result.outcome)),
       pointsOne: Number(await open(result.pointsOne)),
       pointsTwo: Number(await open(result.pointsTwo)),
@@ -165,7 +191,7 @@ describe("ShadowHeistV2", function () {
 
         await playRound(game, one, two, matchId, moveOne, moveTwo);
 
-        const round = await readRound(game, matchId, 1);
+        const round = await readRound(game, matchId, 1, [one, two]);
         expect(round.actionOne).to.equal(moveOne);
         expect(round.actionTwo).to.equal(moveTwo);
         expect(round.outcome).to.equal(outcome);
@@ -215,14 +241,14 @@ describe("ShadowHeistV2", function () {
       // Player one cheats with 0, player two plays Guard. Scout (the clamp) loses to Steal and beats Guard.
       let matchId = await seatedMatch(game, one, two);
       await playRound(game, one, two, matchId, 0, GUARD);
-      let round = await readRound(game, matchId, 1);
+      let round = await readRound(game, matchId, 1, [one, two]);
       expect(round.actionOne).to.equal(SCOUT);
       expect(round.outcome).to.equal(1);
 
       // Player one cheats with 255 and loses to Steal, which the old contract would have drawn.
       matchId = await seatedMatch(game, one, two);
       await playRound(game, one, two, matchId, 255, STEAL);
-      round = await readRound(game, matchId, 1);
+      round = await readRound(game, matchId, 1, [one, two]);
       expect(round.actionOne).to.equal(SCOUT);
       expect(round.outcome).to.equal(2);
     });
@@ -355,6 +381,183 @@ describe("ShadowHeistV2", function () {
       await hre.network.provider.send("evm_increaseTime", [TIMEOUT + 1]);
       await hre.network.provider.send("evm_mine");
       await expect(game.connect(one).abandonStaleMatch(matchId)).to.be.revertedWith("a player already moved");
+    });
+  });
+
+  describe("sealed moves", function () {
+    it("never publishes the moves, even after the round resolves", async function () {
+      const [, one, two] = await hre.ethers.getSigners();
+      const game = await deploy();
+      const matchId = await seatedMatch(game, one, two);
+      await playRound(game, one, two, matchId, STEAL, SCOUT);
+
+      const result = await game.getEncryptedRoundResult(matchId, 1);
+      await expect(hre.fhevm.publicDecryptEuint(FhevmType.euint8, result.actionOne)).to.be.rejected;
+      await expect(hre.fhevm.publicDecryptEuint(FhevmType.euint8, result.actionTwo)).to.be.rejected;
+      // The outcome is public, the moves are not.
+      expect(Number(await hre.fhevm.publicDecryptEuint(FhevmType.euint8, result.outcome))).to.equal(1);
+    });
+
+    it("does not let a player read the rival's sealed move", async function () {
+      const [, one, two] = await hre.ethers.getSigners();
+      const game = await deploy();
+      const matchId = await seatedMatch(game, one, two);
+      await playRound(game, one, two, matchId, STEAL, SCOUT);
+      const result = await game.getEncryptedRoundResult(matchId, 1);
+      await expect(
+        hre.fhevm.userDecryptEuint(FhevmType.euint8, result.actionTwo, await game.getAddress(), one),
+      ).to.be.rejected;
+    });
+  });
+
+  describe("invite-only seats", function () {
+    it("only lets the invited wallet take the second seat", async function () {
+      const [, host, friend, stranger] = await hre.ethers.getSigners();
+      const game = await deploy();
+      await game.connect(host).createMatchWith(1, 1, 0, friend.address, 0);
+      await expect(game.connect(stranger).joinMatch(0n)).to.be.revertedWith("invite only");
+      await expect(game.connect(friend).joinMatch(0n)).to.emit(game, "PlayerJoined").withArgs(0n, friend.address);
+      const info = await game.getStakeInfo(0n);
+      expect(info.invited).to.equal(friend.address);
+    });
+
+    it("rejects inviting yourself", async function () {
+      const [, host] = await hre.ethers.getSigners();
+      const game = await deploy();
+      await expect(game.connect(host).createMatchWith(1, 1, 0, host.address, 0)).to.be.revertedWith("cannot invite yourself");
+    });
+  });
+
+  describe("confidential stakes", function () {
+    it("pays the winner the whole pot", async function () {
+      const [, one, two] = await hre.ethers.getSigners();
+      const game = await deploy();
+      await fund(game, one, 1000n);
+      await fund(game, two, 1000n);
+      const matchId = await stakedMatch(game, one, two, 100n);
+
+      expect(await balanceOf(game, one)).to.equal(900n);
+      expect(await balanceOf(game, two)).to.equal(900n);
+
+      await playRound(game, one, two, matchId, STEAL, SCOUT); // player one wins
+      await expect(game.settle(matchId)).to.emit(game, "StakeSettled").withArgs(matchId);
+
+      expect(await balanceOf(game, one)).to.equal(1100n);
+      expect(await balanceOf(game, two)).to.equal(900n);
+      await expect(game.settle(matchId)).to.be.revertedWith("already settled");
+    });
+
+    it("returns each stake on a draw", async function () {
+      const [, one, two] = await hre.ethers.getSigners();
+      const game = await deploy();
+      await fund(game, one, 500n);
+      await fund(game, two, 500n);
+      const matchId = await stakedMatch(game, one, two, 50n);
+      await playRound(game, one, two, matchId, GUARD, GUARD);
+      await game.settle(matchId);
+      expect(await balanceOf(game, one)).to.equal(500n);
+      expect(await balanceOf(game, two)).to.equal(500n);
+    });
+
+    it("pays the forfeit winner even when the loser has the higher score", async function () {
+      const [, one, two] = await hre.ethers.getSigners();
+      const game = await deploy();
+      await fund(game, one, 300n);
+      await fund(game, two, 300n);
+      await game.connect(one).createMatchWith(2, 3, 0, hre.ethers.ZeroAddress, 100n);
+      const matchId = (await game.nextMatchId()) - 1n;
+      await game.connect(two).joinMatch(matchId);
+
+      await playRound(game, one, two, matchId, STEAL, GUARD); // player two leads
+      await game.connect(one).startNextRound(matchId);
+      await submit(game, one, matchId, STEAL);
+      await hre.network.provider.send("evm_increaseTime", [TIMEOUT + 1]);
+      await hre.network.provider.send("evm_mine");
+      await game.connect(one).forfeitTimeout(matchId);
+
+      await game.settle(matchId);
+      expect(await balanceOf(game, one)).to.equal(400n);
+      expect(await balanceOf(game, two)).to.equal(200n);
+    });
+
+    it("refunds the host when a staked vault is cancelled before anyone joins", async function () {
+      const [, one] = await hre.ethers.getSigners();
+      const game = await deploy();
+      await fund(game, one, 200n);
+      await game.connect(one).createMatchWith(1, 1, 0, hre.ethers.ZeroAddress, 80n);
+      expect(await balanceOf(game, one)).to.equal(120n);
+      await game.connect(one).cancelMatch(0n);
+      await game.settle(0n);
+      expect(await balanceOf(game, one)).to.equal(200n);
+    });
+
+    it("refunds both players when a seated match is abandoned", async function () {
+      const [, one, two] = await hre.ethers.getSigners();
+      const game = await deploy();
+      await fund(game, one, 200n);
+      await fund(game, two, 200n);
+      const matchId = await stakedMatch(game, one, two, 60n);
+      await hre.network.provider.send("evm_increaseTime", [TIMEOUT + 1]);
+      await hre.network.provider.send("evm_mine");
+      await game.connect(one).abandonStaleMatch(matchId);
+      await game.settle(matchId);
+      expect(await balanceOf(game, one)).to.equal(200n);
+      expect(await balanceOf(game, two)).to.equal(200n);
+    });
+
+    it("never lets a wallet that could not fund its stake win the other player's money", async function () {
+      const [, one, two] = await hre.ethers.getSigners();
+      const game = await deploy();
+      await fund(game, one, 1000n); // player two is operator-approved but has nothing
+      await game.mockToken.connect(two).setOperator(await game.getAddress(), 2n ** 40n);
+      const matchId = await stakedMatch(game, one, two, 100n);
+
+      await playRound(game, one, two, matchId, GUARD, STEAL); // player one wins
+      await game.settle(matchId);
+      // Player two put in 0, so the pot is 0 and player one gets their own 100 back.
+      expect(await balanceOf(game, one)).to.equal(1000n);
+      expect(await balanceOf(game, two)).to.equal(0n);
+
+      const matchId2 = await stakedMatch(game, one, two, 100n);
+      await playRound(game, one, two, matchId2, STEAL, GUARD); // player two wins but staked 0
+      await game.settle(matchId2);
+      expect(await balanceOf(game, one)).to.equal(1000n);
+      expect(await balanceOf(game, two)).to.equal(0n);
+    });
+
+    it("makes a rematch rival join and pay for themselves", async function () {
+      const [, one, two] = await hre.ethers.getSigners();
+      const game = await deploy();
+      await fund(game, one, 500n);
+      await fund(game, two, 500n);
+      const matchId = await stakedMatch(game, one, two, 100n);
+      await playRound(game, one, two, matchId, STEAL, SCOUT);
+      await game.settle(matchId);
+
+      await game.connect(two).rematch(matchId);
+      const rematchId = (await game.nextMatchId()) - 1n;
+      // Only the caller's stake moved. The old rival has to join to pay.
+      expect(await balanceOf(game, two)).to.equal(300n); // lost 100, then staked 100 again
+      expect((await game.getMatch(rematchId)).playerTwo).to.equal(hre.ethers.ZeroAddress);
+      await expect(game.connect((await hre.ethers.getSigners())[3]).joinMatch(rematchId)).to.be.revertedWith("invite only");
+      await game.connect(one).joinMatch(rematchId);
+      expect(await balanceOf(game, one)).to.equal(500n); // won 100, then staked 100 again
+    });
+
+    it("refuses stakes and settlement for free matches", async function () {
+      const [, one, two] = await hre.ethers.getSigners();
+      const game = await deploy();
+      const matchId = await seatedMatch(game, one, two);
+      await playRound(game, one, two, matchId, STEAL, SCOUT);
+      await expect(game.settle(matchId)).to.be.revertedWith("no stake");
+    });
+
+    it("rejects stakes when no stake token is configured", async function () {
+      const [, one] = await hre.ethers.getSigners();
+      const Factory = await hre.ethers.getContractFactory("ShadowHeistV2");
+      const game = await Factory.deploy(hre.ethers.ZeroAddress);
+      await game.waitForDeployment();
+      await expect(game.connect(one).createMatchWith(1, 1, 0, hre.ethers.ZeroAddress, 10n)).to.be.revertedWith("stakes are not enabled");
     });
   });
 });

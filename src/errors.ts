@@ -49,6 +49,15 @@ export function friendlyError(error: unknown, fallback: string) {
   if (normalized.includes("insufficient funds") || normalized.includes("fee data") || normalized.includes("underpriced")) {
     return "This wallet cannot pay the Sepolia gas fee. Add Sepolia ETH, then retry.";
   }
+  if (normalized.includes("invite only")) {
+    return "This vault is invite only, and your wallet is not on the list.";
+  }
+  if (normalized.includes("already settled")) {
+    return "The payout was already sent.";
+  }
+  if (normalized.includes("stakes are not enabled")) {
+    return "Stakes are not enabled on this deployment. Play a free vault instead.";
+  }
   if (normalized.includes("match is closed") || normalized.includes("round is closed")) {
     return "This vault is closed. The match already ended or was cancelled.";
   }

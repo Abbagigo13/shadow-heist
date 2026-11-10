@@ -22,13 +22,16 @@ export type LiveMatchState = {
   finished: boolean;
   cancelled: boolean;
   lastActionAt: number;
+  /** Stake per player in token base units. 0n means a free match. */
+  stake: bigint;
+  /** When set, only this wallet may take the second seat. */
+  invited: string | null;
+  settled: boolean;
   /** Set when the match ended by timeout. The forfeit winner wins regardless of score. */
   forfeitWinner: string | null;
 };
 
 export type LiveRoundResult = {
-  playerAction: number;
-  opponentAction: number;
   outcome: number;
   pointsYou: number;
   pointsOpponent: number;
@@ -61,9 +64,19 @@ function findEvent(contract: ReturnType<typeof getShadowHeistContract>, receipt:
     .find((parsed: ReturnType<typeof contract.interface.parseLog> | null) => parsed?.name === name);
 }
 
-export async function createLiveMatch(wallet: WalletSession, mode = 2, maxRounds = 3, challengeId = 0n) {
+export async function createLiveMatch(
+  wallet: WalletSession,
+  mode = 2,
+  maxRounds = 3,
+  challengeId = 0n,
+  options: { invited?: string; stake?: bigint } = {},
+) {
   const contract = getShadowHeistContract(wallet.signer);
-  const transaction = await contract.createMatch(mode, maxRounds, challengeId);
+  const invited = options.invited ?? "";
+  const stake = options.stake ?? 0n;
+  const transaction = invited || stake > 0n
+    ? await contract.createMatchWith(mode, maxRounds, challengeId, invited || ZERO_ADDRESS, stake)
+    : await contract.createMatch(mode, maxRounds, challengeId);
   const receipt = await transaction.wait();
   if (!receipt) throw new Error("Match creation was not confirmed.");
 
@@ -99,7 +112,38 @@ export async function submitLiveAction(
     encrypted.inputProof,
   );
   const receipt = await transaction.wait();
+  const round = Number((await contract.getMatch(matchId)).round);
+  rememberMove(wallet, matchId, round, action);
   onProgress?.("waiting");
+  return { txHash: transactionHash(receipt) };
+}
+
+function moveKey(wallet: WalletSession, matchId: bigint, round: number) {
+  return `shadow-heist:move:${wallet.address.toLowerCase()}:${matchId.toString()}:${round}`;
+}
+
+/** The contract keeps moves sealed, so this device remembers the player's own move for the reveal screen. */
+export function rememberMove(wallet: WalletSession, matchId: bigint, round: number, action: Action) {
+  try {
+    window.sessionStorage.setItem(moveKey(wallet, matchId, round), action);
+  } catch {
+    // Without storage the round still resolves; the reveal just keeps both moves sealed.
+  }
+}
+
+export function recallMove(wallet: WalletSession, matchId: bigint, round: number): Action | null {
+  try {
+    const value = window.sessionStorage.getItem(moveKey(wallet, matchId, round));
+    return value === "steal" || value === "guard" || value === "scout" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function settleLiveMatch(wallet: WalletSession, matchId: bigint) {
+  const contract = getShadowHeistContract(wallet.signer);
+  const transaction = await contract.settle(matchId);
+  const receipt = await transaction.wait();
   return { txHash: transactionHash(receipt) };
 }
 
@@ -131,6 +175,7 @@ export async function readLiveMatch(wallet: WalletSession, matchId: bigint): Pro
   const contract = getShadowHeistContract(wallet.provider);
   const state = await contract.getMatch(matchId);
   const forfeitWinner = state.finished ? (await contract.forfeitWinner(matchId)) as string : ZERO_ADDRESS;
+  const stakeInfo = await contract.getStakeInfo(matchId);
   return {
     playerOne: state.playerOne,
     playerTwo: state.playerTwo,
@@ -145,6 +190,9 @@ export async function readLiveMatch(wallet: WalletSession, matchId: bigint): Pro
     finished: state.finished,
     cancelled: state.cancelled,
     lastActionAt: Number(state.lastActionAt),
+    stake: BigInt(stakeInfo.stake),
+    invited: stakeInfo.invited === ZERO_ADDRESS ? null : (stakeInfo.invited as string),
+    settled: Boolean(stakeInfo.settled),
     forfeitWinner: forfeitWinner === ZERO_ADDRESS ? null : forfeitWinner,
   };
 }
@@ -191,8 +239,6 @@ export async function decryptLiveRound(wallet: WalletSession, matchId: bigint, r
   if (!handles.resolved) throw new Error("This round has not been resolved yet.");
 
   const encryptedHandles = [
-    handles.actionOne,
-    handles.actionTwo,
     handles.outcome,
     handles.pointsOne,
     handles.pointsTwo,
@@ -202,12 +248,10 @@ export async function decryptLiveRound(wallet: WalletSession, matchId: bigint, r
   const clear = encryptedHandles.map((handle) => Number(decrypted.clearValues[handle as `0x${string}`]));
 
   return {
-    playerAction: clear[0] ?? 0,
-    opponentAction: clear[1] ?? 0,
-    outcome: clear[2] ?? 0,
-    pointsYou: clear[3] ?? 0,
-    pointsOpponent: clear[4] ?? 0,
-    eventCode: clear[5] ?? 0,
+    outcome: clear[0] ?? 0,
+    pointsYou: clear[1] ?? 0,
+    pointsOpponent: clear[2] ?? 0,
+    eventCode: clear[3] ?? 0,
   };
 }
 

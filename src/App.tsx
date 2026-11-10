@@ -1,7 +1,9 @@
+import { isAddress } from "ethers";
 import { useEffect, useRef, useState } from "react";
 import {
   calculateResult,
   getHeistEvent,
+  inferRivalMove,
   heistEvents,
   opponentSequence,
   type Action,
@@ -27,7 +29,9 @@ import {
   decryptLiveScore,
   joinLiveMatch,
   readLiveMatch,
+  recallMove,
   rematchLiveMatch,
+  settleLiveMatch,
   type LiveMatchState,
   resolveLiveRound,
   submitLiveAction,
@@ -44,6 +48,14 @@ import {
   WaitingView,
 } from "./components";
 import { isSoundMuted, playSound, setSoundMuted } from "./sound";
+import {
+  ensureStakeReady,
+  formatStake,
+  getTestTokens,
+  readStakeToken,
+  toBaseUnits,
+  type StakeChoice,
+} from "./stake";
 import { friendlyError, type RecoveryAction } from "./errors";
 
 function makeMatchCode() {
@@ -72,6 +84,12 @@ function App() {
   const [opponentScore, setOpponentScore] = useState(0);
   const [matchOutcome, setMatchOutcome] = useState<MatchOutcome | null>(null);
   const [forfeitClaimable, setForfeitClaimable] = useState(false);
+  const [stakeToken, setStakeToken] = useState<`0x${string}` | null>(null);
+  const [stakeChoice, setStakeChoice] = useState<StakeChoice>(0);
+  const [rivalInput, setRivalInput] = useState("");
+  const [matchStake, setMatchStake] = useState(0n);
+  const [inviteOnly, setInviteOnly] = useState(false);
+  const [payoutSent, setPayoutSent] = useState(false);
   const [result, setResult] = useState<RoundResult | null>(null);
   const [toastMessage, setToastMessage] = useState("");
   const [recoveryAction, setRecoveryAction] = useState<RecoveryAction | null>(null);
@@ -126,6 +144,9 @@ function App() {
     setOpponentScore(0);
     setMatchOutcome(null);
     setForfeitClaimable(false);
+    setPayoutSent(false);
+    setMatchStake(0n);
+    setInviteOnly(false);
   }
 
   function notifyError(error: unknown, fallback: string, recovery?: RecoveryAction) {
@@ -139,16 +160,33 @@ function App() {
     setRecoveryAction(null);
 
     if (wallet && SHADOW_HEIST_ADDRESS) {
+      const rival = rivalInput.trim();
+      if (rival && !isAddress(rival)) {
+        setToastMessage("That rival wallet address does not look right. Leave it empty to let anyone join.");
+        return;
+      }
+      const stake = stakeChoice > 0 ? toBaseUnits(stakeChoice) : 0n;
+      if (stake > 0n && !stakeToken) {
+        setToastMessage("Stakes are not enabled on this deployment. Pick Free.");
+        return;
+      }
+
       setConnectionBusy(true);
       try {
+        if (stake > 0n && stakeToken) {
+          setToastMessage("Checking your cUSDT. Your wallet may ask for approvals.");
+          await ensureStakeReady(wallet, stakeToken, stake);
+        }
         setToastMessage("Creating the vault on Sepolia…");
         playSound("vault");
-        const created = await createLiveMatch(wallet, 2, 3, 0n);
+        const created = await createLiveMatch(wallet, 2, 3, 0n, { invited: rival || undefined, stake });
         setLiveMode(true);
         setLiveMatchId(created.matchId);
         setMatchCode(created.matchId.toString());
         setOpponentJoined(false);
         resetMatchProgress();
+        setMatchStake(stake);
+        setInviteOnly(Boolean(rival));
         setView("waiting");
         setToastMessage(`Vault #${created.matchId.toString()} created. Share the match ID.`);
       } catch (error) {
@@ -185,6 +223,15 @@ function App() {
         const matchId = BigInt(numericMatchId);
         setToastMessage(`Joining vault #${numericMatchId} on Sepolia…`);
         playSound("opponent");
+        const preview = await readLiveMatch(wallet, matchId);
+        if (preview.invited && preview.invited.toLowerCase() !== wallet.address.toLowerCase()) {
+          throw new Error("This vault is invite only, and your wallet is not on the list.");
+        }
+        if (preview.stake > 0n) {
+          if (!stakeToken) throw new Error("This vault has a stake, but stakes are not enabled here.");
+          setToastMessage(`This vault stakes ${formatStake(preview.stake)}. Your wallet may ask for approvals.`);
+          await ensureStakeReady(wallet, stakeToken, preview.stake);
+        }
         await joinLiveMatch(wallet, matchId);
         const state = await readLiveMatch(wallet, matchId);
         setLiveMode(true);
@@ -192,6 +239,8 @@ function App() {
         setMatchCode(numericMatchId);
         setOpponentJoined(state.playerTwo !== "0x0000000000000000000000000000000000000000");
         resetMatchProgress();
+        setMatchStake(state.stake);
+        setInviteOnly(Boolean(state.invited));
         setJoinOpen(false);
         setView("waiting");
         setToastMessage(`Joined vault #${numericMatchId}. Waiting for the host to play.`);
@@ -249,6 +298,22 @@ function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    setStakeToken(null);
+    if (!wallet || !SHADOW_HEIST_ADDRESS) return;
+    let cancelled = false;
+    void readStakeToken(wallet)
+      .then((token) => {
+        if (!cancelled) setStakeToken(token);
+      })
+      .catch(() => {
+        if (!cancelled) setStakeToken(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet]);
 
   useEffect(() => {
     if (!wallet) return;
@@ -413,16 +478,17 @@ function App() {
       setProcessing("decrypting");
       const decrypted = await decryptLiveRound(activeWallet, matchId, resolvedState.round);
       const isPlayerOne = activeWallet.address.toLowerCase() === resolvedState.playerOne.toLowerCase();
-      const playerAction = isPlayerOne ? decrypted.playerAction : decrypted.opponentAction;
-      const opponentAction = isPlayerOne ? decrypted.opponentAction : decrypted.playerAction;
       const pointsYou = isPlayerOne ? decrypted.pointsYou : decrypted.pointsOpponent;
       const pointsOpponent = isPlayerOne ? decrypted.pointsOpponent : decrypted.pointsYou;
       const winner = decrypted.outcome === 0
         ? "draw"
         : (decrypted.outcome === 1) === isPlayerOne ? "you" : "opponent";
+      // Moves are never published. Your own move comes from this device and the rival's follows from who won.
+      const myMove = recallMove(activeWallet, matchId, resolvedState.round);
       const liveResult: RoundResult = {
-        playerAction: playerAction === 1 ? "steal" : playerAction === 2 ? "guard" : "scout",
-        opponentAction: opponentAction === 1 ? "steal" : opponentAction === 2 ? "guard" : "scout",
+        movesKnown: myMove !== null,
+        playerAction: myMove ?? "scout",
+        opponentAction: myMove ? inferRivalMove(myMove, winner) : "scout",
         winner,
         pointsYou,
         pointsOpponent,
@@ -476,14 +542,52 @@ function App() {
     }
   }
 
+  async function handleSettle() {
+    if (!wallet || liveMatchId === null) return;
+    setRecoveryAction(null);
+    setConnectionBusy(true);
+    try {
+      setToastMessage("Sending the encrypted payout…");
+      await settleLiveMatch(wallet, liveMatchId);
+      setPayoutSent(true);
+      setToastMessage("Payout sent. Amounts stay encrypted; check your cUSDT balance.");
+    } catch (error) {
+      const latest = await readLiveMatch(wallet, liveMatchId).catch(() => null);
+      if (latest?.settled) {
+        setPayoutSent(true);
+        setToastMessage("The payout was already sent.");
+      } else {
+        notifyError(error, "Could not send the payout.", { label: "Retry", run: () => void handleSettle() });
+      }
+    } finally {
+      setConnectionBusy(false);
+    }
+  }
+
+  async function handleGetTestTokens() {
+    if (!wallet || !stakeToken) return;
+    setRecoveryAction(null);
+    setConnectionBusy(true);
+    try {
+      setToastMessage("Minting 10 test cUSDT. Approve each wallet prompt.");
+      await getTestTokens(wallet, stakeToken, 10);
+      setToastMessage("10 test cUSDT added to your confidential balance.");
+    } catch (error) {
+      notifyError(error, "Could not get test cUSDT.", { label: "Retry", run: () => void handleGetTestTokens() });
+    } finally {
+      setConnectionBusy(false);
+    }
+  }
+
   async function handleCancelVault() {
     if (!wallet || liveMatchId === null) return;
     setRecoveryAction(null);
     setConnectionBusy(true);
     try {
       await cancelLiveMatch(wallet, liveMatchId);
+      if (matchStake > 0n) await settleLiveMatch(wallet, liveMatchId);
       handleBackToLobby();
-      setToastMessage("Vault cancelled. No one can join it now.");
+      setToastMessage(matchStake > 0n ? "Vault cancelled and your stake refunded." : "Vault cancelled. No one can join it now.");
     } catch (error) {
       notifyError(error, "Could not cancel the vault.", { label: "Retry", run: () => void handleCancelVault() });
     } finally {
@@ -579,16 +683,24 @@ function App() {
       if (!wallet || liveMatchId === null) return;
       try {
         setConnectionBusy(true);
+        const stake = matchStake;
+        if (stake > 0n && stakeToken) {
+          setToastMessage("Checking your cUSDT for the rematch stake.");
+          await ensureStakeReady(wallet, stakeToken, stake);
+        }
         setToastMessage("Creating a linked rematch vault on Sepolia…");
         const rematch = await rematchLiveMatch(wallet, liveMatchId);
         setLiveMatchId(rematch.matchId);
         setMatchCode(rematch.matchId.toString());
         resetMatchProgress();
+        setMatchStake(stake);
+        setInviteOnly(stake > 0n);
         setResult(null);
         setProcessing("idle");
-        setOpponentJoined(true);
+        // A staked rematch seats the rival only once they join and pay their own stake.
+        setOpponentJoined(stake === 0n);
         setView("waiting");
-        setToastMessage(`Rematch vault #${rematch.matchId.toString()} created.`);
+        setToastMessage(stake > 0n ? `Rematch vault #${rematch.matchId.toString()} created. Your rival must join to stake.` : `Rematch vault #${rematch.matchId.toString()} created.`);
       } catch (error) {
         notifyError(error, "Could not create the rematch vault.", { label: "Retry rematch", run: () => void handleRematch() });
       } finally {
@@ -643,6 +755,13 @@ function App() {
             joinOpen={joinOpen}
             joinCode={joinCode}
             onJoinCodeChange={setJoinCode}
+            stakeEnabled={Boolean(stakeToken)}
+            stakeChoice={stakeChoice}
+            onStakeChange={setStakeChoice}
+            rivalInput={rivalInput}
+            onRivalChange={setRivalInput}
+            onGetTestTokens={() => void handleGetTestTokens()}
+            busy={connectionBusy}
             onCreate={handleCreateMatch}
             onOpenJoin={() => setJoinOpen((open) => !open)}
             onJoin={handleJoinMatch}
@@ -653,6 +772,8 @@ function App() {
             matchCode={matchCode}
             opponentJoined={opponentJoined}
             liveMode={liveMode}
+            stakeLabel={matchStake > 0n ? formatStake(matchStake) : null}
+            inviteOnly={inviteOnly}
             onBack={handleBackToLobby}
             onSimulateOpponent={handleSimulateOpponent}
             onRefresh={() => void refreshLiveMatch()}
@@ -674,6 +795,9 @@ function App() {
             processing={processing}
             result={result}
             matchOutcome={matchOutcome}
+            stakeLabel={matchStake > 0n ? formatStake(matchStake) : null}
+            payoutSent={payoutSent}
+            onSettle={() => void handleSettle()}
             forfeitClaimable={forfeitClaimable}
             onClaimForfeit={() => void handleClaimForfeit()}
             onSelectAction={setSelectedAction}

@@ -1,6 +1,6 @@
 # Shadow Heist
 
-**Shadow Heist** is a two-player confidential strategy game built with React, Solidity, and [Zama FHEVM](https://www.zama.org/). Players secretly choose **Steal**, **Guard**, or **Scout**. Their moves are encrypted before submission, compared while encrypted, and revealed only when the round resolves.
+**Shadow Heist** is a two-player confidential strategy game built with React, Solidity, and [Zama FHEVM](https://www.zama.org/). Players secretly choose **Steal**, **Guard**, or **Scout**. Their moves are encrypted before submission, compared while encrypted, and never published. Only who won each round is revealed.
 
 > The vault is public. Your move isn’t.
 
@@ -13,7 +13,10 @@ On a public blockchain, an opponent could watch a move before choosing a counter
 - Sepolia wallet support through WalletConnect, with automatic add and switch to Sepolia.
 - Client-side Zama FHEVM encryption with encrypted input proofs.
 - Best-of-three matches using encrypted move evaluation and scores.
-- Public result reveal only after round resolution, with cinematic staged feedback.
+- Sealed moves: the contract never publishes either player’s move, only who won each round, the points and the event.
+- Invite-only vaults: name a rival wallet and nobody else can take the second seat.
+- Confidential stakes: each player can stake cUSDT (an ERC-7984 token). The winner takes the pot, a draw returns both stakes, and a forfeit pays the player who stayed. Amounts stay encrypted.
+- Staged result reveal with cinematic feedback.
 - Noir arcade UI with countdown, sound cues, responsive mobile layout, and rematches.
 
 ## Play the game
@@ -29,12 +32,12 @@ Open the app, choose **Create a vault**, select **Simulate rival joining**, ente
 
 ### Live Sepolia mode
 
-The V2 contract is deployed at [`0xcd8E285b61437EE0AfDdbD5EBA54c1A3ea6FBFb6`](https://sepolia.etherscan.io/address/0xcd8E285b61437EE0AfDdbD5EBA54c1A3ea6FBFb6).
+Deploy the contract with `pnpm contracts:deploy:v2:sepolia`. On Sepolia it uses Zama’s Confidential USDT (Mock) at `0x4E7B06D78965594eB5EF5414c357ca21E1554491` for stakes. Set `STAKE_TOKEN` to use another ERC-7984 token, or to the zero address to turn stakes off. Record your deployed address and a full-match transaction trail here before submitting.
 
 Create `.env.local`:
 
 ```env
-VITE_SHADOW_HEIST_ADDRESS=0xcd8E285b61437EE0AfDdbD5EBA54c1A3ea6FBFb6
+VITE_SHADOW_HEIST_ADDRESS=<your deployed ShadowHeistV2 address>
 VITE_WALLETCONNECT_PROJECT_ID=your_public_project_id
 ```
 
@@ -45,7 +48,9 @@ Connect with WalletConnect (the app adds and switches to Sepolia for you), creat
 - Moves are encrypted in the browser with Zama’s FHE public key.
 - The contract accepts encrypted `euint8` inputs and validates their associated proof.
 - FHEVM computes the matchup and points without exposing the plaintext moves during the round.
-- Round results are intentionally made publicly decryptable after resolution so both players can verify the outcome.
+- Round outcomes, points and the random event are intentionally made publicly decryptable after resolution so anyone can verify the result.
+- Moves are never made public. Each player can decrypt only their own move, and because this is a closed move cycle, the winner plus your own move tells you the rival’s move. Spectators learn neither move.
+- Stakes move through the ERC-7984 token as encrypted amounts. The contract keeps what actually arrived (a short wallet transfers 0, it does not revert) and only ever puts the smaller of the two stakes at risk, so a wallet that could not fund its stake cannot win the other player’s money.
 - Moves outside Steal, Guard and Scout are treated as Scout inside the contract, so a hand-crafted transaction cannot create a move that never loses.
 - If a player stops moving for 30 minutes, the other player can claim the match. The forfeit winner wins whatever the score says.
 
@@ -91,4 +96,4 @@ Built for the **Zama Developer Program — Mainnet Season 5: Confidential Gaming
 pnpm contracts:test
 ```
 
-Runs the FHEVM mock tests: all nine move pairings, event bonuses, privacy of unresolved moves, out-of-range moves, best-of-three scoring, forfeits and abandoned matches.
+Runs the FHEVM mock tests: all nine move pairings, event bonuses, sealed moves, out-of-range moves, best-of-three scoring, forfeits, abandoned matches, invite-only seats and confidential stakes (win, draw, forfeit, refund, unfunded wallet and rematch).
