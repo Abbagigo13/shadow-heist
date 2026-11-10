@@ -190,6 +190,37 @@ function SignalRow({ icon, title, copy }: { icon: IconName; title: string; copy:
   );
 }
 
+export function LandingView({ onEnter }: { onEnter: () => void }) {
+  return (
+    <section className="landing-page" aria-labelledby="landing-title">
+      <div className="landing-copy">
+        <div className="hero-stamp"><Icon name="spark" size={13} /> ZAMA / CONFIDENTIAL GAMING</div>
+        <h1 id="landing-title">The vault is<br /><em>public.</em></h1>
+        <p className="landing-tagline">Your move isn’t.</p>
+        <p className="hero-copy">Shadow Heist is a two-player strategy game where every choice travels sealed. Outsmart the rival, trust the cipher, and take the vault.</p>
+        <button className="primary-button landing-cta" onClick={onEnter}><span className="button-icon"><Icon name="key" size={18} /></span><span><strong>Enter the vault</strong><small>Play the confidential demo</small></span><Icon name="arrow" size={17} className="button-arrow" /></button>
+        <div className="landing-proof"><span><span className="status-dot status-dot-bright" /> FHEVM POWERED</span><span>BEST OF THREE</span><span>SEPOLIA READY</span></div>
+      </div>
+      <div className="landing-banner" aria-label="Shadow Heist confidential vault signal">
+        <svg className="landing-banner-svg" viewBox="0 0 720 520" role="img" aria-labelledby="vault-banner-title vault-banner-desc">
+          <title id="vault-banner-title">Encrypted vault signal</title>
+          <desc id="vault-banner-desc">A glowing vault dial surrounded by encrypted strategy lines.</desc>
+          <defs><radialGradient id="vaultGlow"><stop offset="0" stopColor="#c9f27c" stopOpacity=".22" /><stop offset="1" stopColor="#c9f27c" stopOpacity="0" /></radialGradient><linearGradient id="vaultLine" x1="0" x2="1"><stop stopColor="#87d9ca" stopOpacity="0" /><stop offset=".5" stopColor="#c9f27c" /><stop offset="1" stopColor="#87d9ca" stopOpacity="0" /></linearGradient></defs>
+          <rect width="720" height="520" fill="#111712" />
+          <circle cx="360" cy="255" r="235" fill="url(#vaultGlow)" />
+          <g fill="none" stroke="#c9f27c" strokeOpacity=".14"><circle cx="360" cy="255" r="190" /><circle cx="360" cy="255" r="145" /><circle cx="360" cy="255" r="102" /></g>
+          <g fill="none" stroke="#87d9ca" strokeOpacity=".28" strokeDasharray="2 11"><circle cx="360" cy="255" r="215" /><circle cx="360" cy="255" r="170" /></g>
+          <g stroke="url(#vaultLine)" strokeWidth="1"><path d="M60 128h180l40 40h160l45-45h175" /><path d="M45 382h160l38-38h130l45 42h260" /><path d="M74 255h102M544 255h105" /></g>
+          <g fill="#c9f27c"><circle cx="60" cy="128" r="3" /><circle cx="660" cy="382" r="3" /><circle cx="176" cy="255" r="3" /><circle cx="544" cy="255" r="3" /></g>
+          <g transform="translate(360 255)" fill="none" stroke="#c9f27c"><circle r="76" strokeOpacity=".8" strokeWidth="2" /><circle r="58" strokeOpacity=".35" /><path d="M-76 0h152M0-76v152" strokeOpacity=".2" /><path d="M-38-22v-12a38 38 0 0 1 76 0v12" strokeWidth="4" /><rect x="-48" y="-22" width="96" height="69" rx="8" fill="#152015" strokeWidth="2" /><circle cy="8" r="18" strokeWidth="3" /><path d="M0 8v12l9 6" strokeWidth="3" /></g>
+          <g fill="#87908a" fontFamily="monospace" fontSize="11" letterSpacing="2"><text x="44" y="52">ENCRYPTED / 02</text><text x="535" y="52">NO TELLS / 03</text><text x="42" y="478">ROUND 01 — INPUT SEALED</text><text x="544" y="478">FHEVM</text></g>
+        </svg>
+        <div className="landing-banner-label"><span className="status-dot status-dot-bright" /> OBSERVER VIEW <span>MOVE DATA: HIDDEN</span></div>
+      </div>
+    </section>
+  );
+}
+
 export function LobbyView({
   connected,
   liveReady,

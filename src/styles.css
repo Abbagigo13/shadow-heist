@@ -148,3 +148,34 @@ h1 em { color: var(--acid); font-style: normal; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
 }
+
+/* Landing page: a compact first impression before the playable lobby. */
+.landing-page { min-height: min(670px, calc(100vh - 210px)); display: grid; grid-template-columns: minmax(0, .82fr) minmax(420px, 1.18fr); align-items: center; gap: clamp(34px, 7vw, 110px); }
+.landing-copy { position: relative; z-index: 1; }
+.landing-copy h1 { margin: 22px 0 0; font-size: clamp(64px, 8vw, 114px); line-height: .86; letter-spacing: -.08em; font-weight: 500; }
+.landing-tagline { color: var(--acid); font: 16px 'DM Mono', monospace; letter-spacing: .04em; margin: 20px 0 0; }
+.landing-copy .hero-copy { margin-top: 25px; max-width: 420px; }
+.landing-cta { min-width: 250px; margin-top: 12px; }
+.landing-proof { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 36px; color: #738076; font: 9px 'DM Mono', monospace; letter-spacing: .1em; }
+.landing-proof span { display: inline-flex; align-items: center; gap: 7px; }
+.landing-banner { position: relative; border: 1px solid rgba(201,242,124,.22); background: #111712; box-shadow: 0 24px 90px rgba(0,0,0,.28); overflow: hidden; }
+.landing-banner::before { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(115deg, rgba(201,242,124,.09), transparent 35%, rgba(135,217,202,.06)); mix-blend-mode: screen; }
+.landing-banner-svg { display: block; width: 100%; height: auto; min-height: 360px; }
+.landing-banner-label { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-top: 1px solid rgba(201,242,124,.14); color: #7e8d80; font: 9px 'DM Mono', monospace; letter-spacing: .11em; }
+.landing-banner-label span:last-child { margin-left: auto; color: var(--cyan); }
+@media (max-width: 900px) {
+  .landing-page { min-height: auto; grid-template-columns: 1fr; padding: 20px 0 30px; }
+  .landing-copy h1 { font-size: clamp(64px, 14vw, 100px); }
+  .landing-banner { max-width: 720px; }
+}
+@media (max-width: 520px) {
+  .landing-page { padding-top: 10px; }
+  .landing-copy h1 { font-size: 62px; }
+  .landing-tagline { font-size: 13px; }
+  .landing-copy .hero-copy { font-size: 13px; }
+  .landing-cta { width: 100%; }
+  .landing-proof { gap: 10px; line-height: 1.7; }
+  .landing-banner-svg { min-height: 0; }
+  .landing-banner-label { flex-wrap: wrap; gap: 7px; font-size: 8px; }
+  .landing-banner-label span:last-child { margin-left: 0; width: 100%; }
+}

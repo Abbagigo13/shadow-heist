@@ -30,6 +30,7 @@ import {
 } from "./liveGame";
 import {
   GameView,
+  LandingView,
   LobbyView,
   SiteHeader,
   Toast,
@@ -47,6 +48,7 @@ const ROUND_TIME_SECONDS = 20;
 
 function App() {
   const [view, setView] = useState<MatchView>("lobby");
+  const [showLanding, setShowLanding] = useState(true);
   const [wallet, setWallet] = useState<WalletSession | null>(null);
   const [connectionBusy, setConnectionBusy] = useState(false);
   const [walletModalOpen, setWalletModalOpen] = useState(false);
@@ -91,6 +93,7 @@ function App() {
   useEffect(() => {
     const sharedMatch = new URLSearchParams(window.location.search).get("match");
     if (!sharedMatch) return;
+    setShowLanding(false);
     setJoinCode(sharedMatch);
     setJoinOpen(true);
     setToastMessage(`Invite loaded for match ${sharedMatch}. Choose your entry point.`);
@@ -312,6 +315,7 @@ function App() {
 
   function handleBackToLobby() {
     clearRoundTimers();
+    setShowLanding(false);
     setView("lobby");
     setLiveMode(false);
     setLiveMatchId(null);
@@ -509,7 +513,8 @@ function App() {
       />
 
       <main className="page-frame">
-        {view === "lobby" && (
+        {view === "lobby" && showLanding && <LandingView onEnter={() => setShowLanding(false)} />}
+        {view === "lobby" && !showLanding && (
           <LobbyView
             connected={Boolean(wallet)}
             liveReady={Boolean(wallet && SHADOW_HEIST_ADDRESS)}
