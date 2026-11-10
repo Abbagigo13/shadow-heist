@@ -11,7 +11,7 @@
 - [x] Apply a dark heist-game visual identity with suspenseful feedback, restrained animation, and polished empty, loading, error, and disabled states.
 - [x] Wire the deployed ShadowHeist contract into create-match, join-match, encrypted action submission, live match polling, on-chain resolution, and public result decryption when a wallet and contract address are configured.
 - [x] Support WalletConnect and injected wallets as the provider source for both ethers transactions and Zama FHEVM browser encryption.
-- [ ] Validate a complete two-wallet Sepolia best-of-three match on the redeployed V2 contract (record the new address here) and record any contract/UI edge cases found during that run.
+- [ ] Validate a complete two-wallet Sepolia best-of-three match on the redeployed V2 contract `0xf107Eb78AC34a4D51493425Af7473d1B29c9053C` and record any contract/UI edge cases found during that run.
 - [x] Add a reactive synthesized sound layer with persistent mute control and cues for wallet connection, vault creation, opponent arrival, move sealing, errors, and round outcomes.
 - [x] Add a 20-second round countdown with audible ticks, urgent final seconds, and automatic Scout sealing when the player does not choose in time.
 - [x] Add a staged result reveal that presents encrypted handles, your move, the rival move, the random event, and the final score outcome in sequence.
@@ -21,7 +21,7 @@
 - [x] Add the ShadowHeistV2 contract foundation beside the deployed V1 contract, covering single-round and best-of-three modes, multi-round encrypted results and scores, rematches, cancellation, timeouts, profiles/directory registration, daily challenge configuration, and frontend/indexer-friendly lifecycle events.
 - [x] Encrypted local validation for ShadowHeistV2 (28 mock tests passing).
 - [ ] Two-wallet Sepolia validation of the redeployed ShadowHeistV2; record the transaction links in the README.
-- [x] Deploy ShadowHeistV2 once on Sepolia at `0xcd8E285b61437EE0AfDdbD5EBA54c1A3ea6FBFb6` and migrate the frontend adapter to the V2 multi-round ABI in one cutover.
+- [x] Deploy the fixed ShadowHeistV2 (sealed moves, invites, cUSDT stakes) on Sepolia at `0xf107Eb78AC34a4D51493425Af7473d1B29c9053C` and point the frontend at it.
 - [x] Seal moves for good: only outcome, points and event are public.
 - [x] Invite-only vaults and confidential cUSDT stakes with settle, refund and forfeit payouts (41 mock tests).
 - [ ] Two-wallet Sepolia run with a real stake on cUSDT (Mock); record transaction links.

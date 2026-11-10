@@ -32,12 +32,12 @@ Open the app, choose **Create a vault**, select **Simulate rival joining**, ente
 
 ### Live Sepolia mode
 
-Deploy the contract with `pnpm contracts:deploy:v2:sepolia`. On Sepolia it uses Zama’s Confidential USDT (Mock) at `0x4E7B06D78965594eB5EF5414c357ca21E1554491` for stakes. Set `STAKE_TOKEN` to use another ERC-7984 token, or to the zero address to turn stakes off. Record your deployed address and a full-match transaction trail here before submitting.
+The current contract is deployed on Sepolia at [`0xf107Eb78AC34a4D51493425Af7473d1B29c9053C`](https://sepolia.etherscan.io/address/0xf107Eb78AC34a4D51493425Af7473d1B29c9053C). To deploy your own, run `pnpm contracts:deploy:v2:sepolia`. On Sepolia it uses Zama’s Confidential USDT (Mock) at `0x4E7B06D78965594eB5EF5414c357ca21E1554491` for stakes. Set `STAKE_TOKEN` to use another ERC-7984 token, or to the zero address to turn stakes off. Add a full-match transaction trail here before submitting.
 
 Create `.env.local`:
 
 ```env
-VITE_SHADOW_HEIST_ADDRESS=<your deployed ShadowHeistV2 address>
+VITE_SHADOW_HEIST_ADDRESS=0xf107Eb78AC34a4D51493425Af7473d1B29c9053C
 VITE_WALLETCONNECT_PROJECT_ID=your_public_project_id
 ```
 

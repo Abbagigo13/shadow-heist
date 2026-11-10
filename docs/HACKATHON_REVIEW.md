@@ -2,7 +2,7 @@
 
 Reviewed against the Zama Developer Program Season 5 (Confidential Gaming) judging criteria: gameplay and UX, confidentiality design, fairness, functionality on Sepolia, demo quality, code quality. Submissions close December 14, 2026 (23:59 AOE).
 
-Reviewed: `contracts/ShadowHeistV2.sol`, `src/*`, tests, docs, and the deployed contract at `0xcd8E285b61437EE0AfDdbD5EBA54c1A3ea6FBFb6` on Sepolia.
+Reviewed: `contracts/ShadowHeistV2.sol`, `src/*`, tests, docs, and the deployed contract at `the first V2 deployment (since replaced)` on Sepolia.
 
 ## Must fix before submitting
 
