@@ -12,8 +12,11 @@ import {
   type RoundResult,
 } from "./game";
 import {
+  connectInjectedWallet,
   connectWalletConnect,
   disconnectWallet,
+  discoverWallets,
+  type DetectedWallet,
   refreshWalletSession,
   restoreWalletSession,
   SHADOW_HEIST_ADDRESS,
@@ -46,6 +49,7 @@ import {
   SiteHeader,
   Toast,
   WaitingView,
+  WalletChooser,
 } from "./components";
 import { isSoundMuted, playSound, setSoundMuted } from "./sound";
 import {
@@ -84,6 +88,9 @@ function App() {
   const [opponentScore, setOpponentScore] = useState(0);
   const [matchOutcome, setMatchOutcome] = useState<MatchOutcome | null>(null);
   const [forfeitClaimable, setForfeitClaimable] = useState(false);
+  const [chooserOpen, setChooserOpen] = useState(false);
+  const [detectedWallets, setDetectedWallets] = useState<DetectedWallet[]>([]);
+  const [discovering, setDiscovering] = useState(false);
   const [stakeToken, setStakeToken] = useState<`0x${string}` | null>(null);
   const [stakeChoice, setStakeChoice] = useState<StakeChoice>(0);
   const [rivalInput, setRivalInput] = useState("");
@@ -263,7 +270,7 @@ function App() {
     setToastMessage("You slipped in. Your rival is already watching the door.");
   }
 
-  async function handleWalletConnect() {
+  async function handleWalletButton() {
     setRecoveryAction(null);
     if (wallet) {
       try {
@@ -276,14 +283,33 @@ function App() {
       return;
     }
 
+    setChooserOpen(true);
+    setDiscovering(true);
+    try {
+      setDetectedWallets(await discoverWallets());
+    } finally {
+      setDiscovering(false);
+    }
+  }
+
+  async function handleConnect(choice: { kind: "walletconnect" } | { kind: "injected"; id: string }) {
+    setRecoveryAction(null);
+    setChooserOpen(false);
     setConnectionBusy(true);
     try {
-      const session = await connectWalletConnect();
+      let session: WalletSession;
+      if (choice.kind === "walletconnect") {
+        session = await connectWalletConnect();
+      } else {
+        const detected = detectedWallets.find((candidate) => candidate.id === choice.id);
+        if (!detected) throw new Error("That wallet is no longer available. Try again.");
+        session = await connectInjectedWallet(detected);
+      }
       setWallet(session);
       playSound("connect");
       setToastMessage("Wallet connected on Sepolia.");
     } catch (error) {
-      notifyError(error, "Wallet connection failed.", { label: "Retry", run: () => void handleWalletConnect() });
+      notifyError(error, "Wallet connection failed.", { label: "Retry", run: () => void handleWalletButton() });
     } finally {
       setConnectionBusy(false);
     }
@@ -740,7 +766,7 @@ function App() {
         address={wallet?.address}
         connectionBusy={connectionBusy}
         view={view}
-        onConnect={() => void handleWalletConnect()}
+        onConnect={() => void handleWalletButton()}
         onLogoClick={handleBackToLobby}
         soundMuted={soundMuted}
         onToggleSound={handleToggleSound}
@@ -816,6 +842,17 @@ function App() {
         <span className="footer-spacer" />
         <span className="footer-lock"><span className="status-dot" /> {liveMode ? "FHE READY · LIVE" : "FHE READY · SIMULATED"}</span>
       </footer>
+
+      {chooserOpen && !wallet && (
+        <WalletChooser
+          wallets={detectedWallets}
+          loading={discovering}
+          walletConnectReady
+          onClose={() => setChooserOpen(false)}
+          onSelectInjected={(id) => void handleConnect({ kind: "injected", id })}
+          onSelectWalletConnect={() => void handleConnect({ kind: "walletconnect" })}
+        />
+      )}
 
       {toastMessage && <Toast message={toastMessage} error={Boolean(recoveryAction)} actionLabel={recoveryAction?.label} onAction={() => { const action = recoveryAction; setRecoveryAction(null); action?.run(); }} onDismiss={() => { setToastMessage(""); setRecoveryAction(null); }} />}
     </div>

@@ -135,6 +135,56 @@ export function SiteHeader({
   );
 }
 
+export function WalletChooser({
+  wallets,
+  loading,
+  walletConnectReady,
+  onClose,
+  onSelectInjected,
+  onSelectWalletConnect,
+}: {
+  wallets: { id: string; name: string; icon: string }[];
+  loading: boolean;
+  walletConnectReady: boolean;
+  onClose: () => void;
+  onSelectInjected: (id: string) => void;
+  onSelectWalletConnect: () => void;
+}) {
+  return (
+    <div className="wallet-modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section className="wallet-modal" role="dialog" aria-modal="true" aria-labelledby="wallet-modal-title" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="wallet-modal-head">
+          <div>
+            <span className="section-kicker"><Icon name="wallet" size={14} /> CONNECT WALLET</span>
+            <h2 id="wallet-modal-title">Choose your wallet</h2>
+            <p>Use a browser extension you already have, or scan with a mobile wallet.</p>
+          </div>
+          <button className="icon-button" onClick={onClose} aria-label="Close wallet chooser"><Icon name="x" size={17} /></button>
+        </div>
+        <div className="wallet-choice-list">
+          {loading && <p className="wallet-modal-foot">Looking for browser wallets…</p>}
+          {!loading && wallets.length === 0 && <p className="wallet-modal-foot">No browser wallet found. Install one, or use WalletConnect.</p>}
+          {wallets.map((wallet) => (
+            <button key={wallet.id} className="wallet-choice" onClick={() => onSelectInjected(wallet.id)}>
+              <span className="wallet-choice-icon">{wallet.icon ? <img src={wallet.icon} alt="" width={22} height={22} /> : <Icon name="bolt" size={20} />}</span>
+              <span><strong>{wallet.name}</strong><small>Browser extension</small></span>
+              <Icon name="chevron" size={16} className="signal-chevron" />
+            </button>
+          ))}
+          {walletConnectReady && (
+            <button className="wallet-choice" onClick={onSelectWalletConnect}>
+              <span className="wallet-choice-icon wallet-choice-qr"><Icon name="scan" size={20} /></span>
+              <span><strong>WalletConnect</strong><small>Scan a QR code with your phone</small></span>
+              <Icon name="chevron" size={16} className="signal-chevron" />
+            </button>
+          )}
+        </div>
+        <p className="wallet-modal-foot"><span className="status-dot" /> Sepolia only · Sepolia is added and selected for you</p>
+      </section>
+    </div>
+  );
+}
+
 function SectionKicker({ children, icon }: { children: ReactNode; icon?: IconName }) {
   return <div className="section-kicker">{icon && <Icon name={icon} size={14} />}<span>{children}</span></div>;
 }

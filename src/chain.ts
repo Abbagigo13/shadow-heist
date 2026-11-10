@@ -47,12 +47,16 @@ export type WalletSession = {
   address: string;
   chainId: number;
   eip1193Provider: ViemEip1193Provider;
-  walletConnectProvider: WalletConnectProvider;
+  rawProvider: WalletProvider;
+  source: WalletSource;
 };
 
-export type WalletConnectProvider = Eip1193Provider & {
-  connect: () => Promise<void>;
-  disconnect: () => Promise<void>;
+export type WalletSource = "walletconnect" | "injected";
+
+/** Any EIP-1193 provider: a WalletConnect session or a browser extension. */
+export type WalletProvider = Eip1193Provider & {
+  connect?: () => Promise<void>;
+  disconnect?: () => Promise<void>;
   session?: unknown;
   on: (event: string, listener: (...args: unknown[]) => void) => void;
   removeListener: (event: string, listener: (...args: unknown[]) => void) => void;
@@ -69,7 +73,7 @@ const SEPOLIA_PARAMS = {
   blockExplorerUrls: ["https://sepolia.etherscan.io"],
 };
 
-let walletConnectProvider: WalletConnectProvider | null = null;
+let walletConnectProvider: WalletProvider | null = null;
 
 function errorCode(error: unknown): number | undefined {
   if (!error || typeof error !== "object") return undefined;
@@ -116,11 +120,11 @@ function ensureProjectId() {
   }
 }
 
-async function readChainId(provider: WalletConnectProvider) {
+async function readChainId(provider: WalletProvider) {
   return Number(await provider.request({ method: "eth_chainId" }));
 }
 
-async function waitForSepolia(provider: WalletConnectProvider, timeoutMs = 4000) {
+async function waitForSepolia(provider: WalletProvider, timeoutMs = 4000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if ((await readChainId(provider)) === SEPOLIA_CHAIN_ID) return true;
@@ -130,7 +134,7 @@ async function waitForSepolia(provider: WalletConnectProvider, timeoutMs = 4000)
 }
 
 /** Switches the wallet to Sepolia, adding the network first when the wallet does not know it. */
-async function ensureSepolia(provider: WalletConnectProvider) {
+async function ensureSepolia(provider: WalletProvider) {
   if ((await readChainId(provider)) === SEPOLIA_CHAIN_ID) return;
 
   try {
@@ -164,7 +168,7 @@ async function ensureSepolia(provider: WalletConnectProvider) {
   }
 }
 
-async function createWalletSession(connector: WalletConnectProvider): Promise<WalletSession> {
+async function createWalletSession(connector: WalletProvider, source: WalletSource): Promise<WalletSession> {
   await ensureSepolia(connector);
 
   // Build the ethers provider only after the switch so it never sees a stale network.
@@ -176,11 +180,12 @@ async function createWalletSession(connector: WalletConnectProvider): Promise<Wa
     address: await signer.getAddress(),
     chainId: SEPOLIA_CHAIN_ID,
     eip1193Provider: connector as unknown as ViemEip1193Provider,
-    walletConnectProvider: connector,
+    rawProvider: connector,
+    source,
   };
 }
 
-async function getWalletConnectProvider(): Promise<WalletConnectProvider> {
+async function getWalletConnectProvider(): Promise<WalletProvider> {
   ensureProjectId();
   if (walletConnectProvider) return walletConnectProvider;
 
@@ -198,7 +203,7 @@ async function getWalletConnectProvider(): Promise<WalletConnectProvider> {
         url: window.location.origin,
         icons: [`${window.location.origin}/shadow-heist-logo.svg`],
       },
-    })) as unknown as WalletConnectProvider;
+    })) as unknown as WalletProvider;
     return walletConnectProvider;
   } catch (error) {
     walletConnectProvider = null;
@@ -210,8 +215,44 @@ async function getWalletConnectProvider(): Promise<WalletConnectProvider> {
 export async function connectWalletConnect(): Promise<WalletSession> {
   const connector = await getWalletConnectProvider();
   try {
-    if (!connector.session) await connector.connect();
-    return await createWalletSession(connector);
+    if (!connector.session) await connector.connect?.();
+    return await createWalletSession(connector, "walletconnect");
+  } catch (error) {
+    throw toWalletError(error);
+  }
+}
+
+
+export type DetectedWallet = { id: string; name: string; icon: string; provider: WalletProvider };
+
+/** Finds installed browser wallets using EIP-6963, with window.ethereum as a fallback. */
+export function discoverWallets(waitMs = 350): Promise<DetectedWallet[]> {
+  return new Promise((resolve) => {
+    const found = new Map<string, DetectedWallet>();
+    const onAnnounce = (event: Event) => {
+      const detail = (event as CustomEvent<{ info?: { uuid?: string; name?: string; icon?: string }; provider?: WalletProvider }>).detail;
+      if (detail?.info?.uuid && detail.provider) {
+        found.set(detail.info.uuid, { id: detail.info.uuid, name: detail.info.name ?? "Browser wallet", icon: detail.info.icon ?? "", provider: detail.provider });
+      }
+    };
+    window.addEventListener("eip6963:announceProvider", onAnnounce);
+    window.dispatchEvent(new Event("eip6963:requestProvider"));
+    window.setTimeout(() => {
+      window.removeEventListener("eip6963:announceProvider", onAnnounce);
+      const injected = (window as unknown as { ethereum?: WalletProvider }).ethereum;
+      if (found.size === 0 && injected) {
+        found.set("window.ethereum", { id: "window.ethereum", name: "Browser wallet", icon: "", provider: injected });
+      }
+      resolve([...found.values()]);
+    }, waitMs);
+  });
+}
+
+/** Connects a detected browser extension, then makes sure it is on Sepolia. */
+export async function connectInjectedWallet(wallet: DetectedWallet): Promise<WalletSession> {
+  try {
+    await wallet.provider.request({ method: "eth_requestAccounts" });
+    return await createWalletSession(wallet.provider, "injected");
   } catch (error) {
     throw toWalletError(error);
   }
@@ -223,7 +264,7 @@ export async function restoreWalletSession(): Promise<WalletSession | null> {
   try {
     const connector = await getWalletConnectProvider();
     if (!connector.session) return null;
-    return await createWalletSession(connector);
+    return await createWalletSession(connector, "walletconnect");
   } catch {
     return null;
   }
@@ -234,7 +275,7 @@ export function watchWallet(
   session: WalletSession,
   handlers: { onLost: (reason: "disconnected" | "wrong-network") => void; onAccountChange: () => void },
 ) {
-  const connector = session.walletConnectProvider;
+  const connector = session.rawProvider;
   const onDisconnect = () => handlers.onLost("disconnected");
   const onChain = (chainId: unknown) => {
     if (Number(chainId) !== SEPOLIA_CHAIN_ID) handlers.onLost("wrong-network");
@@ -255,14 +296,15 @@ export function watchWallet(
 }
 
 export async function disconnectWallet(session: WalletSession) {
-  if (session.walletConnectProvider.session) {
-    await session.walletConnectProvider.disconnect();
+  // Browser extensions have no session to close; the app just forgets the wallet.
+  if (session.source === "walletconnect" && session.rawProvider.session) {
+    await session.rawProvider.disconnect?.();
   }
 }
 
 /** Rebuilds the session for the account the wallet is now using. */
 export async function refreshWalletSession(session: WalletSession): Promise<WalletSession> {
-  return createWalletSession(session.walletConnectProvider);
+  return createWalletSession(session.rawProvider, session.source);
 }
 
 export function getShadowHeistContract(signerOrProvider: JsonRpcSigner | BrowserProvider) {

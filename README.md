@@ -10,7 +10,7 @@ On a public blockchain, an opponent could watch a move before choosing a counter
 
 ## Hackathon features
 
-- Sepolia wallet support through WalletConnect, with automatic add and switch to Sepolia.
+- Wallet support for installed browser extensions (found automatically) and WalletConnect for mobile wallets, with automatic add and switch to Sepolia.
 - Client-side Zama FHEVM encryption with encrypted input proofs.
 - Best-of-three matches using encrypted move evaluation and scores.
 - Sealed moves: the contract never publishes either player’s move, only who won each round, the points and the event.
@@ -41,7 +41,7 @@ VITE_SHADOW_HEIST_ADDRESS=0xf107Eb78AC34a4D51493425Af7473d1B29c9053C
 VITE_WALLETCONNECT_PROJECT_ID=your_public_project_id
 ```
 
-Connect with WalletConnect (the app adds and switches to Sepolia for you), create or join a numeric match, then submit encrypted moves from two wallets. Both wallets need Sepolia ETH for gas.
+Connect a browser extension or scan with WalletConnect (the app adds and switches to Sepolia for you), create or join a numeric match, then submit encrypted moves from two wallets. Both wallets need Sepolia ETH for gas.
 
 ## Privacy model
 
