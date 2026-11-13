@@ -98,6 +98,8 @@ export function SiteHeader({
   view,
   onConnect,
   onLogoClick,
+  docsActive,
+  onDocs,
   soundMuted,
   onToggleSound,
 }: {
@@ -107,6 +109,8 @@ export function SiteHeader({
   view: MatchView;
   onConnect: () => void;
   onLogoClick: () => void;
+  docsActive: boolean;
+  onDocs: () => void;
   soundMuted: boolean;
   onToggleSound: () => void;
 }) {
@@ -122,6 +126,7 @@ export function SiteHeader({
       </div>
       <div className="topbar-actions">
         <span className="network-chip"><span className="status-dot" /> SEPOLIA NETWORK</span>
+        <button className={`docs-link ${docsActive ? "is-active" : ""}`} onClick={onDocs} aria-current={docsActive ? "page" : undefined}>Docs</button>
         <button className="sound-button" onClick={onToggleSound} aria-label={soundMuted ? "Turn sound on" : "Mute sound"} aria-pressed={!soundMuted}>
           <Icon name={soundMuted ? "soundOff" : "sound"} size={15} />
           <span>{soundMuted ? "SOUND OFF" : "SOUND ON"}</span>

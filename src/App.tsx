@@ -1,4 +1,5 @@
 import { isAddress } from "ethers";
+import { DocsPage } from "./DocsPage";
 import { useEffect, useRef, useState } from "react";
 import {
   calculateResult,
@@ -88,6 +89,7 @@ function App() {
   const [opponentScore, setOpponentScore] = useState(0);
   const [matchOutcome, setMatchOutcome] = useState<MatchOutcome | null>(null);
   const [forfeitClaimable, setForfeitClaimable] = useState(false);
+  const [docsOpen, setDocsOpen] = useState(() => window.location.hash === "#docs");
   const [chooserOpen, setChooserOpen] = useState(false);
   const [detectedWallets, setDetectedWallets] = useState<DetectedWallet[]>([]);
   const [discovering, setDiscovering] = useState(false);
@@ -143,6 +145,26 @@ function App() {
   function clearRoundTimers() {
     timers.current.forEach((timer) => window.clearTimeout(timer));
     timers.current = [];
+  }
+
+  useEffect(() => {
+    const syncFromHash = () => setDocsOpen(window.location.hash === "#docs");
+    window.addEventListener("hashchange", syncFromHash);
+    return () => window.removeEventListener("hashchange", syncFromHash);
+  }, []);
+
+  useEffect(() => {
+    if (docsOpen) window.scrollTo({ top: 0 });
+  }, [docsOpen]);
+
+  function openDocs() {
+    window.location.hash = "docs";
+    setDocsOpen(true);
+  }
+
+  function closeDocs() {
+    window.history.replaceState({}, "", window.location.pathname + window.location.search);
+    setDocsOpen(false);
   }
 
   function resetMatchProgress() {
@@ -767,14 +789,17 @@ function App() {
         connectionBusy={connectionBusy}
         view={view}
         onConnect={() => void handleWalletButton()}
-        onLogoClick={handleBackToLobby}
+        onLogoClick={() => { closeDocs(); handleBackToLobby(); }}
+        docsActive={docsOpen}
+        onDocs={() => (docsOpen ? closeDocs() : openDocs())}
         soundMuted={soundMuted}
         onToggleSound={handleToggleSound}
       />
 
       <main className="page-frame">
-        {view === "lobby" && showLanding && <LandingView onEnter={() => setShowLanding(false)} />}
-        {view === "lobby" && !showLanding && (
+        {docsOpen && <DocsPage onBack={closeDocs} />}
+        {!docsOpen && view === "lobby" && showLanding && <LandingView onEnter={() => setShowLanding(false)} />}
+        {!docsOpen && view === "lobby" && !showLanding && (
           <LobbyView
             connected={Boolean(wallet)}
             liveReady={Boolean(wallet && SHADOW_HEIST_ADDRESS)}
@@ -793,7 +818,7 @@ function App() {
             onJoin={handleJoinMatch}
           />
         )}
-        {view === "waiting" && (
+        {!docsOpen && view === "waiting" && (
           <WaitingView
             matchCode={matchCode}
             opponentJoined={opponentJoined}
@@ -808,7 +833,7 @@ function App() {
             onCancel={() => void handleCancelVault()}
           />
         )}
-        {view === "game" && (
+        {!docsOpen && view === "game" && (
           <GameView
             matchCode={matchCode}
             liveMode={liveMode}

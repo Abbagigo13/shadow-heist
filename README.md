@@ -17,6 +17,7 @@ On a public blockchain, an opponent could watch a move before choosing a counter
 - Invite-only vaults: name a rival wallet and nobody else can take the second seat.
 - Confidential stakes: each player can stake cUSDT (an ERC-7984 token). The winner takes the pot, a draw returns both stakes, and a forfeit pays the player who stayed. Amounts stay encrypted.
 - Staged result reveal with cinematic feedback.
+- In-app docs: how to play, privacy and trust notes, contract reference and a FAQ (open the Docs link in the header, or add `#docs` to the URL).
 - Noir arcade UI with countdown, sound cues, responsive mobile layout, and rematches.
 
 ## Play the game

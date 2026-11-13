@@ -289,3 +289,53 @@ h1 em { color: var(--acid); font-style: normal; }
 .payout-row > span {
   flex: 1;
 }
+
+.docs-link { border: 1px solid transparent; background: transparent; color: var(--muted); min-height: 37px; padding: 0 12px; font: 11px 'DM Mono', monospace; letter-spacing: .08em; cursor: pointer; transition: color .2s, border-color .2s, background .2s; }
+.docs-link:hover, .docs-link.is-active { color: var(--acid); border-color: rgba(201, 242, 124, .24); background: rgba(201, 242, 124, .05); }
+
+.docs-layout { max-width: 1120px; margin: 0 auto; }
+.docs-title { margin: 0; font-size: clamp(44px, 6vw, 78px); line-height: .95; letter-spacing: -.06em; font-weight: 500; }
+.docs-lede { max-width: 620px; }
+.docs-body { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: clamp(32px, 6vw, 80px); margin-top: 24px; align-items: start; }
+.docs-toc { position: sticky; top: 24px; display: flex; flex-direction: column; gap: 2px; border-left: 1px solid var(--line); padding-left: 16px; }
+.docs-toc-label { color: var(--faint); font: 9px 'DM Mono', monospace; letter-spacing: .16em; margin-bottom: 10px; }
+.docs-toc button { text-align: left; border: 0; background: transparent; padding: 7px 0; color: var(--muted); font-size: 13px; cursor: pointer; transition: color .2s; }
+.docs-toc button:hover, .docs-toc button.is-active { color: var(--acid); }
+.docs-content { min-width: 0; }
+.docs-section { padding: 6px 0 46px; scroll-margin-top: 90px; }
+.docs-section h2 { margin: 0 0 16px; font-size: 28px; font-weight: 500; letter-spacing: -.04em; }
+.docs-section h3 { margin: 28px 0 10px; font-size: 15px; font-weight: 500; color: var(--cyan); letter-spacing: -.01em; }
+.docs-section p, .docs-list, .docs-steps p { color: var(--muted); font-size: 14px; line-height: 1.7; margin: 0 0 12px; max-width: 700px; }
+.docs-section a { color: var(--acid); text-decoration: underline; text-underline-offset: 3px; word-break: break-all; }
+.docs-list { padding-left: 20px; }
+.docs-list li { margin-bottom: 7px; }
+.docs-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
+.docs-cards > div { border: 1px solid var(--line-bright); background: rgba(18, 23, 19, .6); padding: 16px; }
+.docs-cards h3 { margin: 0 0 8px; color: var(--ink); font-size: 14px; }
+.docs-cards p { font-size: 12px; margin: 0; }
+.docs-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.docs-steps li { display: flex; gap: 14px; align-items: flex-start; }
+.docs-steps strong { font-weight: 500; font-size: 15px; display: block; margin-bottom: 3px; }
+.docs-steps p { margin: 0; }
+.docs-step-number { flex: none; width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid rgba(201, 242, 124, .35); color: var(--acid); font: 11px 'DM Mono', monospace; }
+.docs-table { width: 100%; border-collapse: collapse; margin: 6px 0 16px; font-size: 13px; }
+.docs-table th, .docs-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.docs-table th { color: var(--faint); font: 10px 'DM Mono', monospace; letter-spacing: .12em; text-transform: uppercase; font-weight: 400; }
+.docs-table td:first-child { color: var(--ink); white-space: nowrap; }
+.docs-table td { color: var(--muted); }
+.docs-faq { display: grid; gap: 8px; }
+.docs-faq details { border: 1px solid var(--line-bright); background: rgba(18, 23, 19, .6); }
+.docs-faq summary { cursor: pointer; padding: 15px 18px; font-size: 14px; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
+.docs-faq summary::-webkit-details-marker { display: none; }
+.docs-faq summary::after { content: '+'; color: var(--acid); font: 16px 'DM Mono', monospace; }
+.docs-faq details[open] summary::after { content: '\2212'; }
+.docs-faq summary:focus-visible { outline: 2px solid var(--acid); outline-offset: -2px; }
+.docs-faq details[open] { border-color: rgba(201, 242, 124, .35); }
+.docs-faq details p { padding: 0 18px 16px; margin: 0; }
+@media (max-width: 860px) {
+  .docs-body { display: block; }
+  .docs-toc { position: static; flex-direction: row; flex-wrap: wrap; gap: 6px 14px; border-left: 0; padding: 0 0 18px; border-bottom: 1px solid var(--line); margin-bottom: 24px; }
+  .docs-toc-label { width: 100%; margin-bottom: 4px; }
+  .docs-cards { grid-template-columns: 1fr; }
+  .docs-table td:first-child { white-space: normal; }
+}
